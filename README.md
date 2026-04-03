@@ -164,8 +164,16 @@ sudo apt install -y \
   ddcutil i2c-tools pipewire wireplumber \
   network-manager network-manager-gnome \
   ukui-polkit papirus-icon-theme \
-  fish \
-  fonts-jetbrains-mono
+  fish
+```
+
+Install JetBrainsMono Nerd Font (required for waybar icons):
+
+```bash
+mkdir -p ~/.local/share/fonts
+curl -fLo /tmp/JetBrainsMono.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip
+unzip -o /tmp/JetBrainsMono.zip -d ~/.local/share/fonts/
+fc-cache -fv
 ```
 
 Optional but recommended:

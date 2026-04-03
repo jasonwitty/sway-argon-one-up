@@ -1,12 +1,12 @@
 # sway-argon-one-up
 
-Sway window manager configuration for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system), a 14-inch laptop powered by the Raspberry Pi Compute Module 5. Includes Catppuccin Frappe theming, a dynamic keybinding help overlay, hybrid brightness control, and Claude Code integration.
+Sway window manager configuration for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system), a 14-inch laptop powered by the Raspberry Pi Compute Module 5. Includes Catppuccin Frappe theming, a dynamic keybinding help overlay, instant brightness control via direct I2C, and Claude Code integration.
 
 ![screenshot](screenshot.png)
 
 ## Hardware
 
-This config is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system) which uses a Raspberry Pi Compute Module 5. The display is connected via HDMI internally, so standard backlight controls don't apply — brightness uses a hybrid approach: [wl-gammarelay-rs](https://github.com/MaxVerevkin/wl-gammarelay-rs) provides instant gamma adjustment on every key press, while `ddcutil` sets the real panel backlight in the background. The Argon case also has its own battery, monitored via a custom script.
+This config is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system) which uses a Raspberry Pi Compute Module 5. The display is connected via HDMI internally, so standard backlight controls don't apply — brightness is controlled by writing DDC/CI commands directly to the display over I2C bus 14, achieving ~30ms response time. This approach was inspired by [esvertit's display calibration guide](https://forum.argon40.com/t/guide-professional-display-calibration-on-argon-one-up/9188) on the Argon40 forum, which documented the display's I2C interface and DDC/CI capabilities. The Argon case also has its own battery, monitored via a custom script.
 
 ## What's included
 
@@ -26,14 +26,14 @@ This config is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produ
 
 | Key | Action |
 |-----|--------|
-| **Fn+F2** | Brightness down (DDC via ddcutil) |
+| **Fn+F2** | Brightness down (direct I2C, ~30ms) |
 | **Fn+F3** | Brightness up |
 | **Fn+F6** | Mute/unmute |
 | **Fn+F7** | Volume down |
 | **Fn+F8** | Volume up |
 | **Battery key** | Open Argon battery dashboard |
 
-All media keys show a visual indicator via wob (Wayland Overlay Bar). Brightness adjusts instantly via gamma, with the panel backlight catching up ~1s later via DDC.
+All media keys show a visual indicator via wob (Wayland Overlay Bar).
 
 ## sway-help
 
@@ -161,7 +161,7 @@ sudo apt install -y \
   sway swaybg swayidle swaylock xwayland \
   waybar wofi foot wob mako-notifier \
   grim slurp wl-clipboard \
-  ddcutil pipewire wireplumber \
+  ddcutil i2c-tools pipewire wireplumber \
   network-manager network-manager-gnome \
   ukui-polkit papirus-icon-theme \
   fish \
@@ -191,19 +191,7 @@ sudo apt install -y socktop socktop-agent
 sudo systemctl enable --now socktop-agent
 ```
 
-### 10. Install Rust toolchain and wl-gammarelay-rs
-
-The hybrid brightness control needs [wl-gammarelay-rs](https://github.com/MaxVerevkin/wl-gammarelay-rs) for instant gamma adjustment:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
-cargo install wl-gammarelay-rs
-```
-
-Note: compiling on the CM5 takes several minutes.
-
-### 11. Copy this config
+### 10. Copy this config
 
 ```bash
 # Clone the repo
@@ -217,7 +205,7 @@ cp bin/* ~/.local/bin/
 chmod +x ~/.local/bin/*
 ```
 
-### 12. Log in to Sway
+### 11. Log in to Sway
 
 Reboot, and at the GDM login screen select **Sway** from the session menu (gear icon). If everything is set up correctly, you should see the Catppuccin-themed desktop with waybar at the top.
 
@@ -229,7 +217,7 @@ systemctl status seatd
 groups  # make sure seat group is present
 ```
 
-### 13. Install Claude Code (optional)
+### 12. Install Claude Code (optional)
 
 For the Mod+C integration:
 
@@ -254,13 +242,14 @@ If `nvme_core.default_ps_max_latency_us=0` and `pcie_aspm=off` are not present, 
 
 ### Brightness keys don't work
 
-Check that `ddcutil` can see the display and `wl-gammarelay-rs` is running:
+Check that the display is accessible over I2C bus 14:
 
 ```bash
-ddcutil detect
-ddcutil getvcp 10
-pgrep wl-gammarelay
+sudo i2cdetect -y 14  # should show device at 0x37
+ddcutil --bus 14 getvcp 10  # should return current brightness
 ```
+
+The brightness script writes DDC/CI commands directly to `/dev/i2c-14`. Make sure your user has access (should be in the `i2c` or `render` group).
 
 ### No sound / volume keys don't work
 

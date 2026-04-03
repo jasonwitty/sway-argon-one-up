@@ -1,38 +1,19 @@
 #!/bin/bash
-# Hybrid brightness: instant gamma via wl-gammarelay-rs + DDC panel backlight
-#
-# Every key press instantly adjusts gamma for immediate visual feedback.
-# A debounced ddcutil call sets the real panel backlight, then resets gamma to 1.0.
-# Result: instant response on every press, real backlight catches up ~1s later.
+# Direct I2C brightness control for Argon ONE UP display
+# Sets panel backlight in ~1ms via DDC/CI over I2C bus 14
 
 CACHE_FILE="/tmp/.brightness_level"
-PANEL_FILE="/tmp/.brightness_panel"
 WOBSOCK="/run/user/1000/wob.sock"
 STEP=5
 MIN=5
 MAX=100
 
-DBUS_DEST="rs.wl-gammarelay"
-DBUS_PATH="/"
-DBUS_IFACE="rs.wl.gammarelay"
-
-# Kill any pending debounced apply
-pkill -f "brightness-apply" 2>/dev/null
-
-# Current target from cache
+# Get current brightness from cache, or query DDC
 if [[ -f "$CACHE_FILE" ]]; then
     current=$(cat "$CACHE_FILE")
 else
-    current=$(ddcutil getvcp 10 -t 2>/dev/null | awk '{print $4}')
+    current=$(ddcutil --bus 14 getvcp 10 -t 2>/dev/null | awk '{print $4}')
     [[ -z "$current" ]] && current=50
-fi
-
-# Actual panel brightness (what ddcutil last set successfully)
-if [[ -f "$PANEL_FILE" ]]; then
-    panel=$(cat "$PANEL_FILE")
-else
-    panel=$current
-    echo "$panel" > "$PANEL_FILE"
 fi
 
 case "$1" in
@@ -41,28 +22,18 @@ case "$1" in
     *)    echo "Usage: brightness up|down"; exit 1 ;;
 esac
 
-# Instant gamma adjustment: compensate for panel being at old level
-# gamma = target / panel, so effective brightness = panel * (target/panel) = target
-if [[ "$panel" -gt 0 ]]; then
-    gamma=$(awk "BEGIN {v = $new / $panel; if (v > 1.0) v = 1.0; if (v < 0.05) v = 0.05; printf \"%.2f\", v}")
-else
-    gamma="1.00"
-fi
-busctl --user --expect-reply=false set-property $DBUS_DEST $DBUS_PATH $DBUS_IFACE Brightness d "$gamma"
+# Set brightness directly via I2C (~1ms)
+python3 -c "
+import os, fcntl
+addr, val = 0x37, $new
+s, l, op, vcp, vh, vl = 0x51, 0x84, 0x03, 0x10, 0x00, val
+chk = (addr << 1) ^ s ^ l ^ op ^ vcp ^ vh ^ vl
+fd = os.open('/dev/i2c-14', os.O_RDWR)
+fcntl.ioctl(fd, 0x0703, addr)
+os.write(fd, bytes([s, l, op, vcp, vh, vl, chk]))
+os.close(fd)
+"
 
-# Cache target and show indicator
+# Cache and show indicator
 echo "$new" > "$CACHE_FILE"
 echo "$new" > "$WOBSOCK"
-
-# Debounced panel apply: wait briefly for rapid presses to settle
-(
-    exec -a brightness-apply bash -c "
-        sleep 0.4
-        target=\$(cat $CACHE_FILE)
-        pkill -f 'ddcutil setvcp 10' 2>/dev/null
-        ddcutil setvcp 10 \"\$target\" --noverify --sleep-multiplier 0.1 2>/dev/null
-        echo \"\$target\" > $PANEL_FILE
-        busctl --user --expect-reply=false set-property $DBUS_DEST $DBUS_PATH $DBUS_IFACE Brightness d 1.0
-    "
-) &
-disown

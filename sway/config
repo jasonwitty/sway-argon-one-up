@@ -43,9 +43,6 @@ input type:touchpad {
     dwt enabled
 }
 
-### Gamma relay for instant brightness control
-exec_always pkill -x wl-gammarelay-rs; sleep 0.2; wl-gammarelay-rs
-
 ### Wob (overlay bar for brightness/volume)
 set $WOBSOCK $XDG_RUNTIME_DIR/wob.sock
 exec_always ~/.local/bin/start-wob

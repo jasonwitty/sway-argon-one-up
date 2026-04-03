@@ -448,7 +448,17 @@ cp bin/* ~/.local/bin/
 chmod +x ~/.local/bin/*
 ```
 
-### 11. Set up lid close power management
+### 11. Build and install argon-battery-rs
+
+The battery monitor is a Rust binary that reads the Argon battery gauge directly over I2C. It powers the waybar battery indicator and auto-adjusts brightness on AC/battery transitions.
+
+```bash
+cd argon-battery-rs
+cargo build --release
+sudo cp target/release/argon-battery-rs /usr/local/bin/
+```
+
+### 12. Set up lid close power management
 
 The lid-suspend script and sudoers config are required for the lid to properly lock, blank the display, and save power when closed. See the [Lid close power management](#lid-close-power-management) standalone guide for full details, but the short version:
 
@@ -473,7 +483,7 @@ lidshutdownsecs=0
 lidaction=suspend
 ```
 
-### 12. Log in to Sway
+### 13. Log in to Sway
 
 Reboot, and at the GDM login screen select **Sway** from the session menu (gear icon). If everything is set up correctly, you should see the Catppuccin-themed desktop with waybar at the top.
 
@@ -485,7 +495,7 @@ systemctl status seatd
 groups  # make sure seat group is present
 ```
 
-### 13. Install Claude Code (optional)
+### 14. Install Claude Code (optional)
 
 For the Mod+C integration:
 

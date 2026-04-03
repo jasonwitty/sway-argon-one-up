@@ -58,6 +58,117 @@ Launch Claude Code directly from Sway:
 
 ---
 
+## Standalone guides
+
+These sections explain specific features in detail so you can add them to your own setup without cloning the full config.
+
+### Suspend / resume / lid close
+
+Suspend works out of the box on the Argon ONE UP with `systemctl suspend`. The setup has three layers:
+
+**1. Power menu (wofi)** — the power button in waybar opens a wofi menu with Lock, Suspend, Reboot, Shutdown, and Logout options:
+
+```bash
+#!/bin/bash
+# ~/.local/bin/powermenu
+choice=$(printf "Lock\nSuspend\nReboot\nShutdown\nLogout" | wofi --dmenu --prompt "Power")
+
+case "$choice" in
+  Lock) swaylock ;;
+  Suspend) systemctl suspend ;;
+  Reboot) systemctl reboot ;;
+  Shutdown) systemctl poweroff ;;
+  Logout) swaymsg exit ;;
+esac
+```
+
+**2. Idle timeout (swayidle)** — locks the screen after 5 minutes, turns off the display after 10, and locks before any suspend:
+
+```
+exec swayidle -w \
+    timeout 300 'swaylock -f' \
+    timeout 600 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' \
+    before-sleep 'swaylock -f'
+```
+
+**3. Lid close (Argon daemon)** — the Argon config tool handles the lid switch via its own daemon. Configure with:
+
+```bash
+sudo /etc/argon/argononeup-lidconfig.sh
+```
+
+Options are "do nothing" or "shutdown after N minutes". The setting is stored in `/etc/argononeupd.conf` as `lidshutdownsecs`.
+
+### Argon battery in waybar
+
+The Argon ONE UP has its own battery that isn't visible in `/sys/class/power_supply/` — it's accessed through the Argon daemon. To show battery percentage in waybar:
+
+**1. Install the Argon config tool** (if not already):
+
+```bash
+curl https://download.argon40.com/argononeup.sh | bash
+```
+
+**2. Create the battery script** at `~/.local/bin/argon-battery`:
+
+```bash
+#!/bin/bash
+output=$(sudo /usr/bin/python3 /etc/argon/argononeupd.py GETBATTERY 2>/dev/null)
+percent=$(echo "$output" | grep -oP '\d+')
+
+if [ -z "$percent" ]; then
+    echo '{"text": "?%", "tooltip": "Battery status unavailable", "class": "unknown"}'
+    exit 0
+fi
+
+if [ "$percent" -ge 80 ]; then class="good"
+elif [ "$percent" -ge 40 ]; then class="moderate"
+elif [ "$percent" -ge 20 ]; then class="warning"
+else class="critical"
+fi
+
+echo "{\"text\": \"$percent%\", \"tooltip\": \"Argon Battery: $percent%\", \"class\": \"$class\"}"
+```
+
+```bash
+chmod +x ~/.local/bin/argon-battery
+```
+
+**3. Add the module to waybar config:**
+
+```json
+{
+  "modules-right": ["custom/argon-battery"],
+  "custom/argon-battery": {
+    "exec": "~/.local/bin/argon-battery",
+    "return-type": "json",
+    "interval": 60,
+    "tooltip": true,
+    "on-click": "foot -e sudo /usr/bin/python3 /etc/argon/argondashboard.py"
+  }
+}
+```
+
+**4. Style it in waybar `style.css`:**
+
+```css
+#custom-argon-battery { color: #a6d189; }
+#custom-argon-battery.warning { color: #ef9f76; }
+#custom-argon-battery.critical { color: #e78284; }
+```
+
+Note: the script uses `sudo` to query the battery. This requires passwordless sudo for your user, or a targeted sudoers entry for the argon script.
+
+### Battery key binding
+
+The Argon ONE UP has a battery key between F12 and Print Screen. It registers as `Pause` in Sway. To bind it to the Argon battery dashboard:
+
+```
+bindsym Pause exec foot -e sudo /usr/bin/python3 /etc/argon/argondashboard.py
+```
+
+---
+
 ## Initial setup from scratch
 
 This section covers setting up a fresh Argon ONE UP CM5 laptop from a clean Raspberry Pi OS install to a working Sway desktop with this config.

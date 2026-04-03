@@ -64,7 +64,25 @@ Launch Claude Code directly from Sway:
 
 Switch between 9 themes with a single click or command. Every themed app updates simultaneously — sway window borders, waybar, foot terminals, mako notifications, swaylock, wofi, wob, GTK apps, and the wallpaper.
 
-**Available themes:** Catppuccin Frappe, Mocha, Latte, Macchiato, Dracula, Nord, Gruvbox Dark, Monokai Dark, Monokai Light
+**Available themes:**
+
+<p>
+<img src="screenshots/theme-frappe.png" width="30%" alt="Catppuccin Frappe">
+<img src="screenshots/theme-mocha.png" width="30%" alt="Catppuccin Mocha">
+<img src="screenshots/theme-latte.png" width="30%" alt="Catppuccin Latte">
+</p>
+<p>
+<img src="screenshots/theme-macchiato.png" width="30%" alt="Catppuccin Macchiato">
+<img src="screenshots/theme-dracula.png" width="30%" alt="Dracula">
+<img src="screenshots/theme-nord.png" width="30%" alt="Nord">
+</p>
+<p>
+<img src="screenshots/theme-gruvbox.png" width="30%" alt="Gruvbox Dark">
+<img src="screenshots/theme-monokai-dark.png" width="30%" alt="Monokai Dark">
+<img src="screenshots/theme-monokai-light.png" width="30%" alt="Monokai Light">
+</p>
+
+*Frappe, Mocha, Latte, Macchiato, Dracula, Nord, Gruvbox Dark, Monokai Dark, Monokai Light*
 
 | Method | Action |
 |--------|--------|

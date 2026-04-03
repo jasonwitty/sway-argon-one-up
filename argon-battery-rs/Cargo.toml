@@ -1,0 +1,8 @@
+[package]
+name = "argon-battery-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+i2cdev = "0.6"
+libc = "0.2"

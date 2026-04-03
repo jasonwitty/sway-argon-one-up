@@ -70,9 +70,9 @@
     "on-click": "~/.local/bin/sway-help"
   },
   "custom/argon-battery": {
-    "exec": "~/.local/bin/argon-battery",
+    "exec": "/usr/local/bin/argon-battery-rs",
     "return-type": "json",
-    "interval": 60,
+    "interval": 1,
     "tooltip": true,
     "on-click": "foot -e sudo /usr/bin/python3 /etc/argon/argondashboard.py"
   },

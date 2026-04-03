@@ -219,60 +219,49 @@ The waybar power button is configured to call this script on click.
 
 ### Argon battery in waybar
 
-The Argon ONE UP has its own battery that isn't visible in `/sys/class/power_supply/` — it's accessed through the Argon daemon. To show battery percentage in waybar:
+The Argon ONE UP has its own battery that isn't visible in `/sys/class/power_supply/` — it's accessed via the battery gauge IC on I2C bus 1 at address `0x64`. A purpose-built Rust binary (`argon-battery-rs`) reads the SOC and charging registers directly, outputting waybar-compatible JSON. This replaces the original approach of calling the Argon Python daemon, reducing poll overhead from ~110ms to ~22ms — enabling 1-second polling without noticeable CPU impact.
 
-**1. Install the Argon config tool** (if not already):
+**Features:**
+- Battery percentage with level-appropriate icons
+- Charging detection with distinct charging icons and yellow accent color
+- **Automatic brightness adjustment:** 100% when plugged in, 60% on battery — triggered only on power state transitions, not every poll
 
-```bash
-curl https://download.argon40.com/argononeup.sh | bash
-```
-
-**2. Create the battery script** at `~/.local/bin/argon-battery`:
-
-```bash
-#!/bin/bash
-output=$(sudo /usr/bin/python3 /etc/argon/argononeupd.py GETBATTERY 2>/dev/null)
-percent=$(echo "$output" | grep -oP '\d+')
-
-if [ -z "$percent" ]; then
-    echo '{"text": "?%", "tooltip": "Battery status unavailable", "class": "unknown"}'
-    exit 0
-fi
-
-if [ "$percent" -ge 80 ]; then class="good"
-elif [ "$percent" -ge 40 ]; then class="moderate"
-elif [ "$percent" -ge 20 ]; then class="warning"
-else class="critical"
-fi
-
-echo "{\"text\": \"$percent%\", \"tooltip\": \"Argon Battery: $percent%\", \"class\": \"$class\"}"
-```
+**1. Build and install:**
 
 ```bash
-chmod +x ~/.local/bin/argon-battery
+cd argon-battery-rs
+cargo build --release
+sudo cp target/release/argon-battery-rs /usr/local/bin/
 ```
 
-**3. Add the module to waybar config:**
+Your user must be in the `i2c` group (no sudo needed):
+
+```bash
+sudo usermod -aG i2c "$USER"
+```
+
+**2. Add the module to waybar config:**
 
 ```json
 {
   "modules-right": ["custom/argon-battery"],
   "custom/argon-battery": {
-    "exec": "~/.local/bin/argon-battery",
+    "exec": "/usr/local/bin/argon-battery-rs",
     "return-type": "json",
-    "interval": 60,
+    "interval": 1,
     "tooltip": true,
     "on-click": "foot -e sudo /usr/bin/python3 /etc/argon/argondashboard.py"
   }
 }
 ```
 
-**4. Style it in waybar `style.css`:**
+**3. Style it in waybar `style.css`:**
 
 ```css
 #custom-argon-battery { color: #a6d189; }
 #custom-argon-battery.warning { color: #ef9f76; }
 #custom-argon-battery.critical { color: #e78284; }
+#custom-argon-battery.charging { color: #e5c890; }
 ```
 
 Note: the script uses `sudo` to query the battery. This requires passwordless sudo for your user, or a targeted sudoers entry for the argon script.

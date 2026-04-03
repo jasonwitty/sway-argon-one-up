@@ -1,0 +1,10 @@
+#!/bin/bash
+
+choice=$(printf "Lock\nReboot\nShutdown\nLogout" | wofi --dmenu --prompt "Power")
+
+case "$choice" in
+  Lock) swaylock ;;
+  Reboot) systemctl reboot ;;
+  Shutdown) systemctl poweroff ;;
+  Logout) swaymsg exit ;;
+esac

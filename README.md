@@ -20,7 +20,7 @@ This config is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produ
 | `mako/` | Notification daemon themed to match |
 | `swaylock/` | Lock screen with Frappe colored ring indicator |
 | `gtk-3.0/` | GTK dark theme settings |
-| `bin/` | `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `argon-battery`, `lid-suspend` scripts |
+| `bin/` | `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `argon-battery`, `lid-suspend`, `powermenu` scripts |
 
 ## Media keys
 
@@ -127,6 +127,24 @@ exec swayidle -w \
 ```
 
 **Important:** Do not configure `logind.conf` to handle the lid switch — there is no standard lid switch device on this hardware, and if logind attempts to suspend it will black-screen the system.
+
+### Power menu
+
+The power button in waybar opens a wofi menu (`bin/powermenu`) with Lock, Reboot, Shutdown, and Logout options. Suspend is intentionally excluded — the Pi 5 / CM5 does not support system suspend and attempting it will black-screen the system.
+
+```bash
+#!/bin/bash
+choice=$(printf "Lock\nReboot\nShutdown\nLogout" | wofi --dmenu --prompt "Power")
+
+case "$choice" in
+  Lock) swaylock ;;
+  Reboot) systemctl reboot ;;
+  Shutdown) systemctl poweroff ;;
+  Logout) swaymsg exit ;;
+esac
+```
+
+The waybar power button is configured to call this script on click.
 
 ### Argon battery in waybar
 
@@ -353,7 +371,34 @@ cp bin/* ~/.local/bin/
 chmod +x ~/.local/bin/*
 ```
 
-### 11. Log in to Sway
+### 11. Set up lid close power management
+
+The lid-suspend script and sudoers config are required for the lid to properly lock, blank the display, and save power when closed. See the [Lid close power management](#lid-close-power-management) standalone guide for full details, but the short version:
+
+```bash
+# Sudoers for passwordless power management
+sudo tee /etc/sudoers.d/lid-power > /dev/null <<'EOF'
+jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block wifi
+jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock wifi
+jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block bluetooth
+jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
+jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
+jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
+EOF
+sudo visudo -cf /etc/sudoers.d/lid-power
+```
+
+Configure the Argon daemon in `/etc/argononeupd.conf`:
+
+```
+lidshutdownsecs=0
+lidaction=suspend
+```
+
+Replace `jason` with your username in the sudoers file.
+
+### 12. Log in to Sway
 
 Reboot, and at the GDM login screen select **Sway** from the session menu (gear icon). If everything is set up correctly, you should see the Catppuccin-themed desktop with waybar at the top.
 
@@ -365,7 +410,7 @@ systemctl status seatd
 groups  # make sure seat group is present
 ```
 
-### 12. Install Claude Code (optional)
+### 13. Install Claude Code (optional)
 
 For the Mod+C integration:
 
@@ -407,6 +452,61 @@ This config uses PipeWire with WirePlumber (`wpctl`), not PulseAudio (`pactl`):
 wpctl status
 wpctl get-volume @DEFAULT_AUDIO_SINK@
 ```
+
+### Lid close doesn't do anything / no power savings
+
+The Argon ONE UP uses a GPIO-based lid switch, not a standard ACPI lid. Sway `bindswitch` and `logind.conf` `HandleLidSwitch` will not work. The lid is handled entirely by the Argon daemon.
+
+Check that the Argon daemon is running and configured:
+
+```bash
+systemctl status argononed  # daemon should be active
+cat /etc/argononeupd.conf   # should contain lidaction=suspend
+```
+
+Check the lid event log to see if the script is being called:
+
+```bash
+cat ~/.local/state/lid-events.log
+```
+
+A successful close/open cycle looks like:
+
+```
+=== LID CLOSE 2026-04-03 10:01:06 ===
+  display: off
+  cpu governor: powersave
+  wifi: Soft blocked: yes
+  bluetooth: Soft blocked: yes
+  webcam (1-1.4): unbound
+=== LID OPEN 2026-04-03 10:04:45 ===
+  display: on
+  cpu governor: ondemand
+  wifi: Soft blocked: no
+  bluetooth: Soft blocked: no
+  webcam (1-1.4): bound
+```
+
+If the log file doesn't exist, the script isn't being called. Verify:
+
+- `/etc/argononeupd.conf` has `lidaction=suspend`
+- `~/.local/bin/lid-suspend` exists and is executable
+- The Argon daemon's `argonpowerbutton.py` has the suspend case that calls `lid-suspend`
+
+If the log shows a subsystem failed (e.g. `webcam: not found`), the webcam vendor ID (`11cc:2812`) may not match your hardware. Check with `lsusb` and update the IDs in the script.
+
+### Black screen after lid close (hard reboot required)
+
+This means something attempted a real system suspend. The Pi 5 / CM5 has no suspend support — it will freeze. Check:
+
+```bash
+# Make sure logind is NOT trying to handle the lid
+grep -r HandleLidSwitch /etc/systemd/logind.conf /etc/systemd/logind.conf.d/ 2>/dev/null
+```
+
+All `HandleLidSwitch` values should be commented out or set to `ignore`. The safest option is to not have any overrides — the Argon GPIO daemon handles the lid, not logind.
+
+Also make sure the powermenu does not include a Suspend option (`systemctl suspend` will black-screen).
 
 ### Waybar or wob missing after sway reload
 

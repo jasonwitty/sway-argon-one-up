@@ -62,6 +62,7 @@ include ~/.config/sway/colors
     bindsym $mod+Return exec $term
 
     # Autostart
+    exec ~/.local/bin/switch-theme $(cat ~/.config/sway-themes/current)
     exec nm-applet --indicator
     exec /usr/lib/aarch64-linux-gnu/ukui-polkit/polkit-ukui-authentication-agent-1
     exec_always pkill -x mako; sleep 0.3; mako

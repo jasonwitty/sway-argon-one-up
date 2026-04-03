@@ -1,0 +1,216 @@
+#!/bin/bash
+# Switch theme across all themed apps
+# Usage: switch-theme <flavor> | --picker | --wallpaper <path> | --wallpaper-picker
+
+THEMES_DIR="$HOME/.config/sway-themes"
+TEMPLATES_DIR="$THEMES_DIR/templates"
+CURRENT_FILE="$THEMES_DIR/current"
+WALLPAPER_OVERRIDE="$THEMES_DIR/wallpaper-override"
+WALLPAPERS_DIR="$HOME/.wallpapers"
+
+available_flavors() {
+    for f in "$THEMES_DIR"/{frappe,mocha,latte,macchiato,dracula,nord,gruvbox,monokai-dark,monokai-light}; do
+        [ -f "$f" ] && basename "$f"
+    done
+}
+
+current_flavor() {
+    [ -f "$CURRENT_FILE" ] && cat "$CURRENT_FILE"
+}
+
+picker() {
+    current=$(current_flavor)
+    available_flavors | while read -r f; do
+        if [ "$f" = "$current" ]; then
+            echo "$f (current)"
+        else
+            echo "$f"
+        fi
+    done | wofi --dmenu --prompt "Theme" --width 300 --height 350 | sed 's/ (current)//'
+}
+
+render_template() {
+    local template="$1"
+    local output="$2"
+    local content
+    content=$(cat "$template")
+
+    # Replace all @@VARIABLE@@ placeholders with values from the sourced flavor
+    while [[ "$content" =~ @@([A-Z0-9_]+)@@ ]]; do
+        local var="${BASH_REMATCH[1]}"
+        local val="${!var}"
+        content="${content//@@${var}@@/$val}"
+    done
+
+    echo "$content" > "$output"
+}
+
+apply_theme() {
+    local flavor="$1"
+    local flavor_file="$THEMES_DIR/$flavor"
+
+    if [ ! -f "$flavor_file" ]; then
+        echo "Unknown flavor: $flavor"
+        echo "Available: $(available_flavors | tr '\n' ' ')"
+        exit 1
+    fi
+
+    # Source the color definitions
+    source "$flavor_file"
+
+    # Render all templates
+    render_template "$TEMPLATES_DIR/sway-colors" "$HOME/.config/sway/colors"
+    render_template "$TEMPLATES_DIR/waybar-style.css" "$HOME/.config/waybar/style.css"
+    render_template "$TEMPLATES_DIR/foot-colors.ini" "$HOME/.config/foot/colors.ini"
+    render_template "$TEMPLATES_DIR/mako-config" "$HOME/.config/mako/config"
+    render_template "$TEMPLATES_DIR/swaylock-config" "$HOME/.config/swaylock/config"
+    render_template "$TEMPLATES_DIR/wofi-style.css" "$HOME/.config/wofi/style.css"
+    render_template "$TEMPLATES_DIR/wofi-style-help.css" "$HOME/.config/wofi/style-help.css"
+    render_template "$TEMPLATES_DIR/wob.ini" "$HOME/.config/wob/wob.ini"
+
+    # Update waybar config calendar colors
+    sed -i "s/background=\\\\\"#[0-9a-fA-F]\{6\}\\\\\"/background=\\\\\"#${BLUE}\\\\\"/g; s/color=\\\\\"#[0-9a-fA-F]\{6\}\\\\\"/color=\\\\\"#${BASE}\\\\\"/g" "$HOME/.config/waybar/config"
+
+    # Update GTK theme
+    sed -i "s/^gtk-theme-name=.*/gtk-theme-name=$GTK_THEME/" "$HOME/.config/gtk-3.0/settings.ini"
+    sed -i "s/^gtk-icon-theme-name=.*/gtk-icon-theme-name=$ICON_THEME/" "$HOME/.config/gtk-3.0/settings.ini"
+    gsettings set org.gnome.desktop.interface gtk-theme "$GTK_THEME" 2>/dev/null
+    gsettings set org.gnome.desktop.interface icon-theme "$ICON_THEME" 2>/dev/null
+    gsettings set org.gnome.desktop.interface color-scheme "$COLOR_SCHEME" 2>/dev/null
+
+    # foot.ini uses include=~/.config/foot/colors.ini (set up once)
+    # sway config uses include ~/.config/sway/colors (set up once)
+
+    # Save current flavor
+    echo "$flavor" > "$CURRENT_FILE"
+
+    # Apply sway colors at runtime (no full reload needed)
+    swaymsg "client.focused #${BLUE} #${BLUE} #${BASE} #${LAVENDER} #${BLUE}" 2>/dev/null
+    swaymsg "client.focused_inactive #${SURFACE1} #${SURFACE1} #${TEXT} #${SURFACE1} #${SURFACE1}" 2>/dev/null
+    swaymsg "client.unfocused #${BASE} #${BASE} #${TEXT} #${BASE} #${BASE}" 2>/dev/null
+    swaymsg "client.urgent #${RED} #${RED} #${BASE} #${RED} #${RED}" 2>/dev/null
+
+    # Set wallpaper (override takes priority over theme default)
+    set_wallpaper "${WALLPAPER:-}"
+
+    # Live-update all running foot terminals via OSC escape sequences
+    reload_foot_colors
+    makoctl reload 2>/dev/null
+    # Restart waybar to pick up new style.css
+    pkill -x waybar 2>/dev/null; sleep 0.3; waybar &disown 2>/dev/null
+    # Restart wob to pick up new wob.ini colors
+    ~/.local/bin/start-wob &disown 2>/dev/null
+
+    echo "Switched to $THEME_NAME"
+}
+
+reload_foot_colors() {
+    # Build the full OSC sequence string once
+    local osc=""
+    # OSC 10: foreground, OSC 11: background
+    osc+="\e]10;#${TEXT}\a"
+    osc+="\e]11;#${BASE}\a"
+    # OSC 4;N: palette colors 0-15 (regular0-7 = 0-7, bright0-7 = 8-15)
+    osc+="\e]4;0;#${SURFACE1}\a"
+    osc+="\e]4;1;#${RED}\a"
+    osc+="\e]4;2;#${GREEN}\a"
+    osc+="\e]4;3;#${YELLOW}\a"
+    osc+="\e]4;4;#${BLUE}\a"
+    osc+="\e]4;5;#${MAUVE}\a"
+    osc+="\e]4;6;#${TEAL}\a"
+    osc+="\e]4;7;#${SUBTEXT1}\a"
+    osc+="\e]4;8;#${SURFACE2}\a"
+    osc+="\e]4;9;#${RED}\a"
+    osc+="\e]4;10;#${GREEN}\a"
+    osc+="\e]4;11;#${YELLOW}\a"
+    osc+="\e]4;12;#${BLUE}\a"
+    osc+="\e]4;13;#${MAUVE}\a"
+    osc+="\e]4;14;#${TEAL}\a"
+    osc+="\e]4;15;#${SUBTEXT0}\a"
+
+    # Send to every foot terminal via the pts of its child shell
+    for pid in $(pgrep -x foot); do
+        local child
+        child=$(pgrep -P "$pid" | head -1)
+        [ -z "$child" ] && continue
+        local target
+        target=$(readlink /proc/"$child"/fd/0 2>/dev/null) || continue
+        if [[ "$target" == /dev/pts/* ]]; then
+            printf '%b' "$osc" > "$target" 2>/dev/null
+        fi
+    done
+}
+
+set_wallpaper() {
+    local wp="$1"
+
+    # Override file takes priority
+    if [ -f "$WALLPAPER_OVERRIDE" ]; then
+        wp=$(cat "$WALLPAPER_OVERRIDE")
+    fi
+
+    if [ -n "$wp" ] && [ -f "$wp" ]; then
+        pkill -x swaybg 2>/dev/null
+        sleep 0.2
+        swaybg -o '*' -i "$wp" -m fill &disown 2>/dev/null
+    fi
+}
+
+wallpaper_picker() {
+    local files=()
+    while IFS= read -r -d '' f; do
+        files+=("$(basename "$f")")
+    done < <(find "$WALLPAPERS_DIR" -maxdepth 1 -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.webp' \) -print0 | sort -z)
+    if [ ${#files[@]} -eq 0 ]; then
+        echo "No wallpapers found in $WALLPAPERS_DIR"
+        exit 1
+    fi
+    printf '%s\n' "${files[@]}" | wofi --dmenu --prompt "Wallpaper" --width 400 --height 300
+}
+
+# Main
+case "${1:-}" in
+    --picker|-p)
+        choice=$(picker)
+        [ -n "$choice" ] && apply_theme "$choice"
+        ;;
+    --wallpaper-picker|-wp)
+        choice=$(wallpaper_picker)
+        if [ -n "$choice" ]; then
+            echo "$WALLPAPERS_DIR/$choice" > "$WALLPAPER_OVERRIDE"
+            set_wallpaper "$WALLPAPERS_DIR/$choice"
+            echo "Wallpaper set to $choice (override saved)"
+        fi
+        ;;
+    --wallpaper|-w)
+        if [ -z "${2:-}" ]; then
+            echo "Usage: switch-theme --wallpaper <path>"
+            exit 1
+        fi
+        wp=$(realpath "$2")
+        if [ ! -f "$wp" ]; then
+            echo "File not found: $2"
+            exit 1
+        fi
+        echo "$wp" > "$WALLPAPER_OVERRIDE"
+        set_wallpaper "$wp"
+        echo "Wallpaper set to $wp (override saved)"
+        ;;
+    --wallpaper-reset|-wr)
+        rm -f "$WALLPAPER_OVERRIDE"
+        current=$(current_flavor)
+        if [ -n "$current" ]; then
+            source "$THEMES_DIR/$current"
+            set_wallpaper "${WALLPAPER:-}"
+            echo "Wallpaper reset to $current theme default"
+        fi
+        ;;
+    "")
+        echo "Usage: switch-theme <flavor> | --picker | --wallpaper <path> | --wallpaper-picker | --wallpaper-reset"
+        echo "Current: $(current_flavor)"
+        echo "Available: $(available_flavors | tr '\n' ' ')"
+        ;;
+    *)
+        apply_theme "$1"
+        ;;
+esac

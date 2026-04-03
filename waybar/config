@@ -10,6 +10,8 @@
   "modules-right": [
     "custom/claude",
     "custom/help",
+    "custom/theme",
+    "custom/scale",
     "cpu",
     "pulseaudio",
     "backlight",
@@ -73,6 +75,18 @@
     "interval": 60,
     "tooltip": true,
     "on-click": "foot -e sudo /usr/bin/python3 /etc/argon/argondashboard.py"
+  },
+  "custom/theme": {
+    "format": "󰏘 ",
+    "tooltip": false,
+    "on-click": "swaymsg exec ~/.local/bin/switch-theme\\ --picker"
+  },
+  "custom/scale": {
+    "exec": "~/.local/bin/sway-scale get",
+    "interval": 2,
+    "format": "󰍉 {}",
+    "tooltip": false,
+    "on-click": "swaymsg exec ~/.local/bin/sway-scale\\ picker"
   },
   "custom/power": {
     "format": "⏻",

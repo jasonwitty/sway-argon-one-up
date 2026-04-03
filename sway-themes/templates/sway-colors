@@ -1,0 +1,6 @@
+### Colors (@@THEME_NAME@@)
+# class                 border      bg          text        indicator    child_border
+client.focused          #@@BLUE@@   #@@BLUE@@   #@@BASE@@   #@@LAVENDER@@ #@@BLUE@@
+client.focused_inactive #@@SURFACE1@@ #@@SURFACE1@@ #@@TEXT@@ #@@SURFACE1@@ #@@SURFACE1@@
+client.unfocused        #@@BASE@@   #@@BASE@@   #@@TEXT@@   #@@BASE@@    #@@BASE@@
+client.urgent           #@@RED@@    #@@RED@@    #@@BASE@@   #@@RED@@     #@@RED@@

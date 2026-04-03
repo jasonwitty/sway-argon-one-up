@@ -21,14 +21,11 @@ set $menu wofi --show drun
 
 include /etc/sway/config-vars.d/*
 
-# Dark theme for GTK apps
+# GTK theme — managed by switch-theme, no exec_always overrides
 set $gnome-schema org.gnome.desktop.interface
-exec_always gsettings set $gnome-schema gtk-theme 'Adwaita-dark'
-exec_always gsettings set $gnome-schema icon-theme 'Papirus-Dark'
-exec_always gsettings set $gnome-schema color-scheme 'prefer-dark'
 
 ### Output configuration
-output eDP-1 scale 1
+output * scale 1.6
 
 ### Idle configuration
 exec swayidle -w \
@@ -47,12 +44,8 @@ input type:touchpad {
 set $WOBSOCK $XDG_RUNTIME_DIR/wob.sock
 exec_always ~/.local/bin/start-wob
 
-### Colors (Catppuccin Frappe)
-# class                 border  bg      text    indicator child_border
-client.focused          #8caaee #8caaee #303446 #babbf1   #8caaee
-client.focused_inactive #51576d #51576d #c6d0f5 #51576d   #51576d
-client.unfocused        #303446 #303446 #c6d0f5 #303446   #303446
-client.urgent           #e78284 #e78284 #303446 #e78284   #e78284
+
+include ~/.config/sway/colors
 
 ### Key bindings
 #
@@ -226,6 +219,8 @@ bindsym $mod+r mode "resize"
     # Claude
     bindsym $mod+c exec foot -e claude
     bindsym $mod+Shift+c exec ~/.local/bin/claude-prompt
+    # Theme switcher
+    bindsym $mod+t exec ~/.local/bin/switch-theme --picker
     # Help overlay
     bindsym $mod+Shift+h exec ~/.local/bin/sway-help
 

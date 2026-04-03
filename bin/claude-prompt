@@ -10,4 +10,4 @@ prompt=$(wofi --show dmenu \
 
 [ -z "$prompt" ] && exit 0
 
-foot -e bash -c "claude \"$prompt\"; exec bash"
+foot -e fish -c "claude \"$prompt\"; exec fish"

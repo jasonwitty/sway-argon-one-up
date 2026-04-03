@@ -1,0 +1,44 @@
+#!/bin/bash
+# Adjust sway output scale. Usage: sway-scale [up|down|reset|get]
+# Steps through: 1.0, 1.25, 1.5, 1.6, 1.75, 2.0
+
+STEPS=(1 1.25 1.5 1.6 1.75 2)
+DEFAULT="1.6"
+
+current() {
+    swaymsg -t get_outputs 2>/dev/null | grep -o '"scale": [0-9.]*' | head -1 | awk '{printf "%.4g", $2}'
+}
+
+find_index() {
+    local val="$1"
+    for i in "${!STEPS[@]}"; do
+        if awk "BEGIN{exit !(${STEPS[$i]} == $val)}"; then
+            echo "$i"
+            return
+        fi
+    done
+    echo "-1"
+}
+
+set_scale() {
+    swaymsg output '*' scale "$1" 2>/dev/null
+}
+
+cur=$(current)
+idx=$(find_index "$cur")
+
+case "${1:-get}" in
+    picker)
+        choice=$(printf '%s\n' "${STEPS[@]}" | while read -r s; do
+            if awk "BEGIN{exit !($s == $cur)}"; then
+                echo "${s}x (current)"
+            else
+                echo "${s}x"
+            fi
+        done | wofi --dmenu --prompt "Scale" --width 250 --height 250 | sed 's/x.*//')
+        [ -n "$choice" ] && set_scale "$choice"
+        ;;
+    get)
+        echo "${cur}x"
+        ;;
+esac

@@ -1,6 +1,6 @@
 # sway-argon-one-up
 
-Sway window manager configuration for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system), a 14-inch laptop powered by the Raspberry Pi Compute Module 5. Includes Catppuccin Frappe theming, a dynamic keybinding help overlay, instant brightness control via direct I2C, and Claude Code integration.
+Sway window manager configuration for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system), a 14-inch laptop powered by the Raspberry Pi Compute Module 5. Includes a 9-theme switcher with matching wallpapers and live terminal recoloring, a dynamic keybinding help overlay, instant brightness control via direct I2C, display scaling controls, and Claude Code integration.
 
 ![screenshot](screenshot.png)
 
@@ -12,15 +12,19 @@ This config is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produ
 
 | Directory | Description |
 |-----------|-------------|
-| `sway/` | Sway config with Catppuccin Frappe window colors, idle lock, touchpad, media keys |
-| `waybar/` | Top bar with workspaces, clock, CPU, volume, backlight, Argon battery, tray, Claude + help + power buttons |
+| `sway/` | Sway config with themed window colors, idle lock, touchpad, media keys |
+| `waybar/` | Top bar with workspaces, clock, CPU, volume, backlight, Argon battery, tray, theme/scale/Claude/help/power buttons |
+| `sway-themes/` | 9 theme definitions + templates for all themed apps (sway, waybar, foot, mako, swaylock, wofi, wob) |
+| `wallpapers/` | Matching wallpaper for each theme (auto-applied on theme switch) |
 | `wob/` | Wayland Overlay Bar config for brightness/volume indicators |
 | `wofi/` | App launcher and help overlay styles |
-| `foot/` | Terminal emulator with Frappe 16-color palette |
+| `foot/` | Terminal emulator config + color include (live-recolored on theme switch via OSC sequences) |
 | `mako/` | Notification daemon themed to match |
-| `swaylock/` | Lock screen with Frappe colored ring indicator |
-| `gtk-3.0/` | GTK dark theme settings |
-| `bin/` | `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `argon-battery`, `lid-suspend`, `powermenu` scripts |
+| `swaylock/` | Lock screen with themed ring indicator |
+| `gtk-3.0/` | GTK theme settings (switched automatically per theme) |
+| `fish/` | Fish shell config |
+| `starship.toml` | Starship prompt config |
+| `bin/` | `switch-theme`, `sway-scale`, `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `argon-battery`, `lid-suspend`, `powermenu` scripts |
 
 ## Media keys
 
@@ -55,6 +59,57 @@ Launch Claude Code directly from Sway:
 | **Waybar icon** | Left-click opens Claude, right-click opens quick prompt |
 
 `claude-prompt` opens a minimal wofi input, takes your question, and launches Claude in foot with that prompt. The terminal stays open after Claude responds so you can continue the conversation.
+
+## Theme switcher
+
+Switch between 9 themes with a single click or command. Every themed app updates simultaneously — sway window borders, waybar, foot terminals, mako notifications, swaylock, wofi, wob, GTK apps, and the wallpaper.
+
+**Available themes:** Catppuccin Frappe, Mocha, Latte, Macchiato, Dracula, Nord, Gruvbox Dark, Monokai Dark, Monokai Light
+
+| Method | Action |
+|--------|--------|
+| **Mod+T** | Open theme picker (wofi) |
+| **Waybar palette icon** | Open theme picker |
+| `switch-theme <name>` | Switch directly (e.g. `switch-theme dracula`) |
+| `switch-theme --wallpaper-picker` | Choose a wallpaper (overrides theme default) |
+| `switch-theme --wallpaper <path>` | Set a specific wallpaper |
+| `switch-theme --wallpaper-reset` | Revert to the current theme's default wallpaper |
+
+**How it works:**
+
+- Theme definitions in `sway-themes/` set 35 color variables + wallpaper path
+- Templates in `sway-themes/templates/` use `@@VARIABLE@@` placeholders
+- `switch-theme` sources a theme, renders all templates, and applies colors at runtime
+- Foot terminals are live-recolored via OSC 4/10/11 escape sequences sent directly to each terminal's pts device — no restart needed
+- Wallpapers are applied via `swaybg`, with an optional override that persists across theme switches
+- Waybar is restarted (via `swaymsg exec` to survive the restart), mako is reloaded, wob is restarted
+
+**Adding a new theme:** Create a file in `sway-themes/` following the existing format (see `sway-themes/dracula` for reference), add a matching wallpaper to `wallpapers/`, and add the name to the `available_flavors()` list in `bin/switch-theme`.
+
+## Display scaling
+
+A waybar module for adjusting Sway's output scale on the fly — useful for finding the right balance between screen real estate and readability.
+
+| Method | Action |
+|--------|--------|
+| **Waybar magnifier icon** | Open scale picker (wofi) |
+| Available steps | 1x, 1.25x, 1.5x, 1.6x, 1.75x, 2x |
+
+The default is 1.6x (1200x750 effective on the 1920x1200 panel). Click to reset to default.
+
+## WiFi stability
+
+The BCM43455 WiFi chip in the CM5 has aggressive power management that causes intermittent disconnects. This is fixed by disabling WiFi power save:
+
+```bash
+sudo tee /etc/NetworkManager/conf.d/wifi-powersave-off.conf > /dev/null <<EOF
+[connection]
+wifi.powersave = 2
+EOF
+sudo nmcli general reload
+```
+
+Verify with `iw dev wlan0 get power_save` — should show `Power save: off`.
 
 ---
 
@@ -332,6 +387,12 @@ unzip -o /tmp/JetBrainsMono.zip -d ~/.local/share/fonts/
 fc-cache -fv
 ```
 
+Install [Starship](https://starship.rs/) prompt for fish:
+
+```bash
+curl -sS https://starship.rs/install.sh | sh
+```
+
 Optional but recommended:
 
 ```bash
@@ -363,7 +424,9 @@ git clone https://github.com/jasonwitty/sway-argon-one-up.git
 cd sway-argon-one-up
 
 # Copy configs
-cp -r sway waybar wob wofi foot mako swaylock gtk-3.0 ~/.config/
+cp -r sway waybar wob wofi foot mako swaylock gtk-3.0 sway-themes fish ~/.config/
+cp starship.toml ~/.config/
+cp -r wallpapers ~/.wallpapers
 mkdir -p ~/.local/bin
 cp bin/* ~/.local/bin/
 chmod +x ~/.local/bin/*

@@ -1,0 +1,44 @@
+window {
+  background-color: #@@MANTLE@@;
+  color: #@@TEXT@@;
+  border: 2px solid #@@BLUE@@;
+  border-radius: 8px;
+  opacity: 0.95;
+}
+
+#input {
+  background-color: #@@BASE@@;
+  color: #@@TEXT@@;
+  border: none;
+  border-bottom: 2px solid #@@BLUE@@;
+  padding: 8px 12px;
+  margin: 4px;
+  font-size: 13px;
+}
+
+#inner-box {
+  background-color: transparent;
+}
+
+#outer-box {
+  padding: 4px;
+}
+
+#entry {
+  padding: 4px 10px;
+  border-radius: 0;
+  font-size: 12px;
+}
+
+#entry:selected {
+  background-color: #@@SURFACE0@@;
+  color: #@@BLUE@@;
+}
+
+#text {
+  color: #@@TEXT@@;
+}
+
+#text:selected {
+  color: #@@BLUE@@;
+}

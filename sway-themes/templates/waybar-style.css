@@ -4,8 +4,8 @@
 }
 
 window#waybar {
-  background: #303446;
-  color: #c6d0f5;
+  background: #@@BASE@@;
+  color: #@@TEXT@@;
 }
 
 #workspaces {
@@ -14,19 +14,19 @@ window#waybar {
 
 #workspaces button {
   padding: 0 6px;
-  color: #c6d0f5;
+  color: #@@TEXT@@;
   border-bottom: 2px solid transparent;
 }
 
 #workspaces button.focused {
-  background: #414559;
-  color: #8caaee;
-  border-bottom: 2px solid #8caaee;
+  background: #@@SURFACE0@@;
+  color: #@@BLUE@@;
+  border-bottom: 2px solid #@@BLUE@@;
 }
 
 #workspaces button.urgent {
-  background: #e78284;
-  color: #303446;
+  background: #@@RED@@;
+  color: #@@BASE@@;
 }
 
 #cpu,
@@ -42,67 +42,67 @@ window#waybar {
 }
 
 #cpu {
-  color: #85c1dc;
+  color: #@@SAPPHIRE@@;
 }
 
 #pulseaudio {
-  color: #ca9ee6;
+  color: #@@MAUVE@@;
 }
 
 #network {
-  color: #8caaee;
+  color: #@@BLUE@@;
 }
 
 #network.disconnected {
-  color: #e78284;
+  color: #@@RED@@;
 }
 
 #backlight {
-  color: #e5c890;
+  color: #@@YELLOW@@;
 }
 
 #custom-argon-battery {
-  color: #a6d189;
+  color: #@@GREEN@@;
 }
 
 #custom-argon-battery.warning {
-  color: #ef9f76;
+  color: #@@PEACH@@;
 }
 
 #custom-argon-battery.critical {
-  color: #e78284;
+  color: #@@RED@@;
 }
 
 #battery {
-  color: #a6d189;
+  color: #@@GREEN@@;
 }
 
 #battery.warning {
-  color: #ef9f76;
+  color: #@@PEACH@@;
 }
 
 #battery.critical {
-  color: #e78284;
+  color: #@@RED@@;
 }
 
 #clock {
-  color: #f2d5cf;
+  color: #@@ROSEWATER@@;
 }
 
 #custom-claude {
-  color: #ef9f76;
+  color: #@@PEACH@@;
 }
 
 #custom-help {
-  color: #babbf1;
+  color: #@@LAVENDER@@;
 }
 
 #custom-theme {
-  color: #ca9ee6;
+  color: #@@MAUVE@@;
 }
 
 #custom-power {
-  color: #e78284;
+  color: #@@RED@@;
   padding-right: 12px;
 }
 
@@ -111,11 +111,11 @@ window#waybar {
 }
 
 tooltip {
-  background: #292c3c;
-  border: 1px solid #414559;
+  background: #@@MANTLE@@;
+  border: 1px solid #@@SURFACE0@@;
   border-radius: 4px;
 }
 
 tooltip label {
-  color: #c6d0f5;
+  color: #@@TEXT@@;
 }

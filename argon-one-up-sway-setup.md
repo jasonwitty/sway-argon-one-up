@@ -782,19 +782,17 @@ The Argon daemon's power button monitor (`argonpowerbutton.py`) checks `lidactio
 **3. Add passwordless sudo** for the specific operations the script needs:
 
 ```bash
-sudo tee /etc/sudoers.d/lid-power > /dev/null <<'EOF'
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block wifi
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock wifi
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block bluetooth
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
-jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
-jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
+sudo tee /etc/sudoers.d/lid-power > /dev/null <<EOF
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block wifi
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock wifi
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block bluetooth
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
 EOF
 sudo visudo -cf /etc/sudoers.d/lid-power
 ```
-
-Replace `jason` with your username.
 
 ### Important notes
 

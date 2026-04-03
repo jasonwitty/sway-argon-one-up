@@ -103,19 +103,17 @@ chmod +x ~/.local/bin/lid-suspend
 **3. Add passwordless sudo** for the power management operations:
 
 ```bash
-sudo tee /etc/sudoers.d/lid-power > /dev/null <<'EOF'
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block wifi
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock wifi
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block bluetooth
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
-jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
-jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
+sudo tee /etc/sudoers.d/lid-power > /dev/null <<EOF
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block wifi
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock wifi
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block bluetooth
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
 EOF
 sudo visudo -cf /etc/sudoers.d/lid-power
 ```
-
-Replace `jason` with your username.
 
 **4. Idle timeout (swayidle)** — separate from the lid, this locks after 5 minutes idle and turns off the display after 10:
 
@@ -377,14 +375,14 @@ The lid-suspend script and sudoers config are required for the lid to properly l
 
 ```bash
 # Sudoers for passwordless power management
-sudo tee /etc/sudoers.d/lid-power > /dev/null <<'EOF'
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block wifi
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock wifi
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block bluetooth
-jason ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
-jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
-jason ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
+sudo tee /etc/sudoers.d/lid-power > /dev/null <<EOF
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block wifi
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock wifi
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block bluetooth
+$USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
 EOF
 sudo visudo -cf /etc/sudoers.d/lid-power
 ```
@@ -395,8 +393,6 @@ Configure the Argon daemon in `/etc/argononeupd.conf`:
 lidshutdownsecs=0
 lidaction=suspend
 ```
-
-Replace `jason` with your username in the sudoers file.
 
 ### 12. Log in to Sway
 

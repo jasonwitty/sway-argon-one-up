@@ -64,6 +64,7 @@ include ~/.config/sway/colors
     # Autostart
     exec ~/.local/bin/switch-theme $(cat ~/.config/sway-themes/current)
     exec nm-applet --indicator
+    exec blueman-applet
     exec /usr/lib/aarch64-linux-gnu/ukui-polkit/polkit-ukui-authentication-agent-1
     exec_always pkill -x mako; sleep 0.3; mako
 
@@ -226,5 +227,7 @@ bindsym $mod+r mode "resize"
     bindsym $mod+Shift+h exec ~/.local/bin/sway-help
     # Brave browser
     bindsym $mod+b exec /usr/bin/brave-browser-stable --enable-low-end-device-mode --process-per-site --disable-smooth-scrolling --disable-features=TabHoverCards --disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+    # Calculator
+    bindsym $mod+equal exec galculator
 
 include /etc/sway/config.d/*

@@ -24,6 +24,7 @@ This config is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produ
 | `gtk-3.0/` | GTK theme settings (switched automatically per theme) |
 | `fish/` | Fish shell config |
 | `starship.toml` | Starship prompt config |
+| `greetd/` | Login screen config: greetd + gtkgreet with Catppuccin Frappe theme and wallpaper |
 | `bin/` | `switch-theme`, `sway-scale`, `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `argon-battery`, `lid-suspend`, `powermenu` scripts |
 
 ## Media keys
@@ -350,16 +351,36 @@ groups  # should include seat, video, audio, input, render
 systemctl status seatd  # should be active
 ```
 
-### 7. Install a login manager
+### 7. Install a login manager (greetd + gtkgreet)
 
-Install GDM (GNOME Display Manager) so you can select Sway as your session at the login screen:
+Install [greetd](https://sr.ht/~kennylevinsen/greetd/) with [gtkgreet](https://man.sr.ht/~kennylevinsen/greetd/#gtkgreet) for a lightweight Wayland-native login screen that runs inside its own minimal Sway session:
+
+```bash
+sudo apt install -y greetd gtkgreet
+sudo systemctl enable greetd
+```
+
+Copy the greeter configs from this repo:
+
+```bash
+sudo cp greetd/config.toml greetd/sway-config greetd/gtkgreet.css /etc/greetd/
+```
+
+Set a wallpaper for the login screen (any image you like):
+
+```bash
+sudo cp wallpapers/frappe.png /etc/greetd/wallpaper.png
+```
+
+**How it works:** greetd launches a minimal Sway session (no bar, no keybindings) that displays gtkgreet over a wallpaper. After login, gtkgreet starts your real Sway session and the greeter's Sway exits. The CSS uses Catppuccin Frappe colors to match the default theme.
+
+**Fallback:** If you prefer a more traditional login manager, you can use GDM instead:
 
 ```bash
 sudo apt install -y gdm3
 sudo systemctl enable gdm
+# (disable greetd if switching: sudo systemctl disable greetd)
 ```
-
-After installing Sway (next step), you'll be able to choose **Sway** from the session dropdown on the GDM login screen.
 
 ### 8. Install dependencies
 
@@ -506,7 +527,7 @@ lidaction=suspend
 
 ### 13. Log in to Sway
 
-Reboot, and at the GDM login screen select **Sway** from the session menu (gear icon). If everything is set up correctly, you should see the Catppuccin-themed desktop with waybar at the top.
+Reboot, and you'll see the gtkgreet login screen with your wallpaper. Enter your username and password to launch Sway. If everything is set up correctly, you should see the Catppuccin-themed desktop with waybar at the top.
 
 If Sway fails to start, check:
 

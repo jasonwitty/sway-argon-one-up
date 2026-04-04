@@ -1,0 +1,13 @@
+# Minimal sway config for gtkgreet login screen
+# No keybindings, no bar — just wallpaper + greeter
+
+# Set wallpaper
+output * bg /etc/greetd/wallpaper.png fill
+
+# Launch gtkgreet and exit sway when done
+exec "gtkgreet -l -c sway -s /etc/greetd/gtkgreet.css; swaymsg exit"
+
+# Disable everything unnecessary
+xwayland disable
+
+include /etc/sway/config.d/*

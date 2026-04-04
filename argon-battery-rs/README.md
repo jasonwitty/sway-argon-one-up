@@ -1,5 +1,7 @@
 # argon-battery-rs
 
+![argon-battery-rs in waybar](screenshot.png)
+
 A lightweight Rust battery monitor for the [Argon ONE UP](https://argon40.com/products/argon-one-up-cm5-laptop-core-system) laptop. Reads battery state-of-charge and charging status directly from the battery gauge IC over I2C, outputting JSON suitable for waybar, i3status-rs, or any bar that accepts JSON custom modules.
 
 ## Why this exists

@@ -74,12 +74,21 @@ apply_theme() {
     # Update GTK theme
     sed -i "s/^gtk-theme-name=.*/gtk-theme-name=$GTK_THEME/" "$HOME/.config/gtk-3.0/settings.ini"
     sed -i "s/^gtk-icon-theme-name=.*/gtk-icon-theme-name=$ICON_THEME/" "$HOME/.config/gtk-3.0/settings.ini"
+    if [ "$COLOR_SCHEME" = "prefer-dark" ]; then
+        sed -i "s/^gtk-application-prefer-dark-theme=.*/gtk-application-prefer-dark-theme=true/" "$HOME/.config/gtk-3.0/settings.ini"
+    else
+        sed -i "s/^gtk-application-prefer-dark-theme=.*/gtk-application-prefer-dark-theme=false/" "$HOME/.config/gtk-3.0/settings.ini"
+    fi
     gsettings set org.gnome.desktop.interface gtk-theme "$GTK_THEME" 2>/dev/null
-    gsettings set org.gnome.desktop.interface icon-theme "$ICON_THEME" 2>/dev/null
     gsettings set org.gnome.desktop.interface color-scheme "$COLOR_SCHEME" 2>/dev/null
 
-    # foot.ini uses include=~/.config/foot/colors.ini (set up once)
-    # sway config uses include ~/.config/sway/colors (set up once)
+    # Update Papirus folder colors and force GTK apps to reload icons
+    if [ -n "${FOLDER_COLOR:-}" ]; then
+        "$HOME/.local/bin/papirus-folders" -C "$FOLDER_COLOR" -t "$ICON_THEME" 2>/dev/null
+        gtk-update-icon-cache -q "/usr/share/icons/$ICON_THEME" 2>/dev/null
+    fi
+    gsettings set org.gnome.desktop.interface icon-theme "hicolor" 2>/dev/null
+    gsettings set org.gnome.desktop.interface icon-theme "$ICON_THEME" 2>/dev/null
 
     # Save current flavor
     echo "$flavor" > "$CURRENT_FILE"

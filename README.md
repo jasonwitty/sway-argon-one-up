@@ -14,7 +14,7 @@ This config is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produ
 |-----------|-------------|
 | `sway/` | Sway config with themed window colors, idle lock, touchpad, media keys |
 | `waybar/` | Top bar with workspaces, clock, CPU, volume, backlight, Argon battery, tray, theme/scale/Claude/help/power buttons |
-| `sway-themes/` | 9 theme definitions + templates for all themed apps (sway, waybar, foot, mako, swaylock, wofi, wob, Brave, Chromium) |
+| `sway-themes/` | 9 theme definitions + templates for all themed apps (sway, waybar, foot, mako, swaylock, wofi, wob, Brave, Chromium, Thunar/GTK) |
 | `wallpapers/` | Matching wallpaper for each theme (auto-applied on theme switch) |
 | `wob/` | Wayland Overlay Bar config for brightness/volume indicators |
 | `wofi/` | App launcher and help overlay styles |
@@ -86,7 +86,7 @@ EOF
 
 ## Theme switcher
 
-Switch between 9 themes with a single click or command. Every themed app updates simultaneously — sway window borders, waybar, foot terminals, mako notifications, swaylock, wofi, wob, GTK apps, Brave, Chromium, and the wallpaper.
+Switch between 9 themes with a single click or command. Every themed app updates simultaneously — sway window borders, waybar, foot terminals, mako notifications, swaylock, wofi, wob, GTK apps (including Thunar folder colors), Brave, Chromium, and the wallpaper.
 
 **Available themes:**
 
@@ -119,11 +119,12 @@ Switch between 9 themes with a single click or command. Every themed app updates
 
 **How it works:**
 
-- Theme definitions in `sway-themes/` set 35 color variables + wallpaper path
+- Theme definitions in `sway-themes/` set 35 color variables + wallpaper path + GTK theme + Papirus folder color
 - Templates in `sway-themes/templates/` use `@@VARIABLE@@` placeholders
 - `switch-theme` sources a theme, renders all templates, and applies colors at runtime
 - Foot terminals are live-recolored via OSC 4/10/11 escape sequences sent directly to each terminal's pts device — no restart needed
 - Brave and Chromium are themed via managed policy files (`/etc/brave/policies/managed/color.json` and `/etc/chromium/policies/managed/color.json`) — the browser reads these live, no restart needed
+- GTK apps (including Thunar) update live via gsettings — folder icons change color per theme using `papirus-folders`
 - Wallpapers are applied via `swaybg`, with an optional override that persists across theme switches
 - Waybar is restarted (via `swaymsg exec` to survive the restart), mako is reloaded, wob is restarted
 
@@ -439,6 +440,26 @@ Optional but recommended:
 ```bash
 sudo apt install -y \
   firefox-esr thunar mpv imv file-roller chromium
+```
+
+### 8b. Install GTK themes and Papirus folder colors
+
+The theme switcher sets a matching GTK theme and Papirus folder icon color for each theme. Install the GTK themes to `~/.themes/`:
+
+- **Catppuccin GTK** — download from [catppuccin/gtk](https://github.com/catppuccin/gtk/releases) (mocha, frappe, latte, macchiato — blue, standard+default variants)
+- **Dracula GTK** — download from [dracula/gtk](https://github.com/dracula/gtk/releases)
+- **Nordic GTK** — download from [EliverLara/Nordic](https://github.com/EliverLara/Nordic/releases)
+- **Gruvbox GTK** — download from [Fausto-Korpsvansen/Gruvbox-GTK-Theme](https://github.com/Fausto-Korpsvansen/Gruvbox-GTK-Theme) (Gruvbox-Dark)
+- **Monokai GTK** — download from [Maikuolan/Monokai](https://github.com/Maikuolan/Monokai)
+
+Extract each into `~/.themes/` so they appear as e.g. `~/.themes/Dracula/`, `~/.themes/Nordic/`, etc. Monokai Light uses the built-in Adwaita theme (no download needed).
+
+Install the `papirus-folders` script for per-theme folder icon colors:
+
+```bash
+curl -fLo ~/.local/bin/papirus-folders \
+  https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/master/papirus-folders
+chmod +x ~/.local/bin/papirus-folders
 ```
 
 For Brave browser, follow the [official install guide](https://brave.com/linux/). Both Brave and Chromium are themed automatically by the theme switcher. Set up the policy directories for browser theming:

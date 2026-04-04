@@ -360,16 +360,10 @@ sudo apt install -y greetd gtkgreet
 sudo systemctl enable greetd
 ```
 
-Copy the greeter configs from this repo:
+Copy the greeter configs and wallpaper from this repo:
 
 ```bash
-sudo cp greetd/config.toml greetd/sway-config greetd/gtkgreet.css /etc/greetd/
-```
-
-Set a wallpaper for the login screen (any image you like):
-
-```bash
-sudo cp wallpapers/frappe.png /etc/greetd/wallpaper.png
+sudo cp greetd/config.toml greetd/sway-config greetd/gtkgreet.css greetd/wallpaper.png /etc/greetd/
 ```
 
 **How it works:** greetd launches a minimal Sway session (no bar, no keybindings) that displays gtkgreet over a wallpaper. After login, gtkgreet starts your real Sway session and the greeter's Sway exits. The CSS uses Catppuccin Frappe colors to match the default theme.

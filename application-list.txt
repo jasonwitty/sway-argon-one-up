@@ -1,0 +1,110 @@
+Required packages
+=================
+
+# Sway desktop
+sway
+swaybg
+swayidle
+swaylock
+xwayland
+waybar
+wofi
+foot
+wob
+mako-notifier
+greetd
+gtkgreet
+
+# System services
+seatd
+pipewire
+wireplumber
+network-manager
+network-manager-gnome
+ukui-polkit
+
+# Display / brightness
+ddcutil
+i2c-tools
+
+# Shell and CLI tools
+fish
+starship
+atuin
+zoxide
+fzf
+bat
+eza
+ugrep
+neovim
+micro
+
+# Screenshot / recording
+grim
+slurp
+wl-clipboard
+wf-recorder
+
+# Fonts
+fonts-firacode
+JetBrainsMono Nerd Font
+
+# Desktop apps
+thunar
+mpv
+imv
+file-roller
+galculator
+zathura
+blueman
+
+# System info / monitoring
+socktop
+socktop-agent
+hwinfo
+
+# Theming
+papirus-icon-theme
+papirus-folders
+libglib2.0-bin (gsettings)
+GTK themes (Catppuccin, Dracula, Nordic, Gruvbox, Monokai)
+
+# Argon ONE UP hardware
+argononeup.sh (curl installer)
+argon-battery-rs (build from repo)
+python3
+
+# Rust toolchain (for building argon-battery-rs and CLI tools)
+rustup (cargo install: pfetch-rs)
+
+
+Optional packages (prompt user individually)
+=============================================
+
+# Brave
+brave-browser-stable
+  Brave is a privacy-focused open-source browser with built-in ad and
+  tracker blocking enabled by default. It supports vertical tabs for a
+  clean, minimal look. This is the default browser for this setup and
+  is fully integrated with the theme switcher — title bar and color
+  scheme update live on every theme change.
+
+# Chromium
+chromium
+  Chromium carries the latest patches for Wayland screen sharing. If you
+  need to run web apps like Slack or Microsoft Teams and want to share
+  your screen, Chromium is the way to go. It is also fully integrated
+  with the theme switcher, so it works great as a daily driver too.
+
+# WebApps (Linux Mint)
+webapp-manager
+  Running on ARM, you will quickly find that not every app is packaged
+  for your architecture. WebApps lets you pin sites like Slack or Teams
+  as standalone windows with their own icons — no browser tabs needed.
+
+# Claude Code
+claude-code
+  Claude Code is an AI coding assistant that lives in your terminal. It
+  can read your project, write and edit code, run commands, and help you
+  think through problems — all from the command line. This setup includes
+  Mod+C to launch Claude and Mod+Shift+C for a quick-prompt popup via wofi.

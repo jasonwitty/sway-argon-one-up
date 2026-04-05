@@ -10,8 +10,7 @@
 #   1. Flash Raspberry Pi OS Lite (Trixie, 64-bit) and boot
 #   2. Connect to WiFi
 #   3. sudo apt update && sudo apt full-upgrade -y && sudo reboot
-#   4. Fix NVMe: append "nvme_core.default_ps_max_latency_us=0 pcie_aspm=off" to /boot/firmware/cmdline.txt, reboot
-#   5. Set Wi-Fi country: sudo raspi-config nonint do_wifi_country US
+#   4. Set Wi-Fi country: sudo raspi-config nonint do_wifi_country US
 
 set -euo pipefail
 
@@ -92,6 +91,21 @@ else
     warn "Cannot determine OS version (/etc/os-release not found)."
 fi
 
+# Ensure this is RPi OS Lite (no pre-installed desktop)
+if dpkg -l lightdm &>/dev/null 2>&1; then
+    error "lightdm is installed — this looks like the full Raspberry Pi OS (Desktop)."
+    error "This installer requires Raspberry Pi OS Lite (Trixie, 64-bit)."
+    error "Please re-image with the Lite variant and try again."
+    exit 1
+fi
+if [ -d /usr/share/raspi-ui-overrides ] || dpkg -l rpd-plymouth-splash &>/dev/null 2>&1; then
+    error "A desktop environment appears to be pre-installed."
+    error "This installer requires Raspberry Pi OS Lite (Trixie, 64-bit)."
+    error "Please re-image with the Lite variant and try again."
+    exit 1
+fi
+success "Raspberry Pi OS Lite detected"
+
 # Internet connectivity
 if ! ping -c 1 -W 3 github.com &>/dev/null; then
     error "No internet connectivity. Please connect to the network first."
@@ -99,19 +113,6 @@ if ! ping -c 1 -W 3 github.com &>/dev/null; then
 fi
 success "Internet connectivity"
 
-# NVMe kernel params
-if [ -f /proc/cmdline ]; then
-    if ! grep -q "nvme_core.default_ps_max_latency_us=0" /proc/cmdline 2>/dev/null; then
-        warn "NVMe power management fix not detected in kernel params."
-        warn "The system may be extremely slow without it."
-        warn "See README for instructions: append to /boot/firmware/cmdline.txt"
-        echo ""
-        read -rp "Continue anyway? [y/N] " response
-        [[ "$response" =~ ^[Yy]$ ]] || exit 1
-    else
-        success "NVMe kernel params set"
-    fi
-fi
 
 # Disk space check (~1GB minimum)
 AVAIL_KB=$(df --output=avail /home | tail -1 | tr -d ' ')
@@ -202,12 +203,7 @@ fi
 # Optional: Brave
 if [ "$INSTALL_BRAVE" = "y" ]; then
     info "Installing Brave browser..."
-    sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
-        https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
-    echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | \
-        sudo tee /etc/apt/sources.list.d/brave-browser-release.list > /dev/null
-    sudo apt update
-    sudo apt install -y brave-browser-stable
+    curl -fsS https://dl.brave.com/install.sh | sh
     success "Brave installed"
 fi
 
@@ -242,11 +238,11 @@ fi
 source "$HOME/.cargo/env" 2>/dev/null || true
 
 if command -v pfetch &>/dev/null; then
-    success "pfetch-rs already installed"
+    success "pfetch already installed"
 else
-    info "Installing pfetch-rs (system info display)..."
-    cargo install --locked pfetch-rs
-    success "pfetch-rs installed"
+    info "Installing pfetch (system info display)..."
+    cargo install --locked pfetch
+    success "pfetch installed"
 fi
 
 # ---------------------------------------------------------------------------

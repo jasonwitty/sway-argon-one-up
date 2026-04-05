@@ -1,0 +1,52 @@
+#!/bin/bash
+# Set brightness and CPU governor based on AC/battery state at startup.
+# Called once from sway config on login.
+
+# Read charging status from battery gauge IC via I2C bus 1, address 0x64
+# Register 0x0E high byte: bit 7 set = discharging, clear = charging
+current_high=$(python3 -c "
+import os, fcntl
+fd = os.open('/dev/i2c-1', os.O_RDWR)
+fcntl.ioctl(fd, 0x0703, 0x64)
+os.write(fd, bytes([0x0E]))
+data = os.read(fd, 1)
+os.close(fd)
+print(data[0])
+" 2>/dev/null)
+
+if [ -z "$current_high" ]; then
+    exit 0
+fi
+
+# Bit 7: 0 = charging (AC), 1 = discharging (battery)
+if (( (current_high & 0x80) == 0 )); then
+    brightness=100
+    governor="ondemand"
+else
+    brightness=40
+    governor="powersave"
+fi
+
+# Set brightness via DDC/CI over I2C bus 14
+python3 -c "
+import os, fcntl
+addr, val = 0x37, $brightness
+s, l, op, vcp, vh, vl = 0x51, 0x84, 0x03, 0x10, 0x00, val
+chk = (addr << 1) ^ s ^ l ^ op ^ vcp ^ vh ^ vl
+fd = os.open('/dev/i2c-14', os.O_RDWR)
+fcntl.ioctl(fd, 0x0703, addr)
+os.write(fd, bytes([s, l, op, vcp, vh, vl, chk]))
+os.close(fd)
+" 2>/dev/null
+
+echo "$brightness" > /tmp/.brightness_level
+
+# Set CPU governor
+~/.local/bin/power-mode "$governor"
+
+# Prime the state file so argon-battery-rs doesn't re-trigger
+if (( (current_high & 0x80) == 0 )); then
+    echo "1" > /tmp/.argon-battery-charging
+else
+    echo "0" > /tmp/.argon-battery-charging
+fi

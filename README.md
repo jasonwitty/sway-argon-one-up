@@ -284,32 +284,7 @@ sudo apt full-upgrade -y
 sudo reboot
 ```
 
-### 3. Fix NVMe power management (critical)
-
-The Argon ONE UP's NVMe drive can become extremely sluggish or cause I/O timeouts without these kernel parameters. **This was the single biggest stability issue during initial setup — the system was nearly unusable without this fix.**
-
-Edit the kernel command line (**keep everything on one line**):
-
-```bash
-sudo nano /boot/firmware/cmdline.txt
-```
-
-Append to the existing line:
-
-```
-nvme_core.default_ps_max_latency_us=0 pcie_aspm=off
-```
-
-This disables NVMe power state transitions and PCIe Active State Power Management, both of which cause latency spikes on the CM5's PCIe bus.
-
-Reboot, then verify no NVMe errors:
-
-```bash
-sudo reboot
-dmesg -T | grep -i nvme
-```
-
-### 4. Install the Argon config tool
+### 3. Install the Argon config tool
 
 This provides battery monitoring, fan control, and power button configuration for the Argon ONE UP case:
 
@@ -317,7 +292,7 @@ This provides battery monitoring, fan control, and power button configuration fo
 curl https://download.argon40.com/argononeup.sh | bash
 ```
 
-### 5. Set Wi-Fi regulatory domain
+### 4. Set Wi-Fi regulatory domain
 
 Incorrect settings can cause poor Wi-Fi performance and channel restrictions:
 
@@ -333,7 +308,7 @@ Verify with:
 iw reg get
 ```
 
-### 6. Enable seat management
+### 5. Enable seat management
 
 Sway needs proper seat access to manage the display and input devices:
 
@@ -351,7 +326,7 @@ groups  # should include seat, video, audio, input, render
 systemctl status seatd  # should be active
 ```
 
-### 7. Install a login manager (greetd + gtkgreet)
+### 6. Install a login manager (greetd + gtkgreet)
 
 Install [greetd](https://sr.ht/~kennylevinsen/greetd/) with [gtkgreet](https://man.sr.ht/~kennylevinsen/greetd/#gtkgreet) for a lightweight Wayland-native login screen that runs inside its own minimal Sway session:
 
@@ -376,7 +351,7 @@ sudo systemctl enable gdm
 # (disable greetd if switching: sudo systemctl disable greetd)
 ```
 
-### 8. Install dependencies
+### 7. Install dependencies
 
 Core packages:
 
@@ -452,7 +427,7 @@ $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/chromium/policies/managed/color.json
 EOF
 ```
 
-### 9. Install socktop
+### 8. Install socktop
 
 [socktop](https://socktop.io) is a TUI-first remote system monitor. It's used by the waybar CPU module (click to open). Install from the apt repo:
 
@@ -468,7 +443,7 @@ sudo apt install -y socktop socktop-agent
 sudo systemctl enable --now socktop-agent
 ```
 
-### 10. Copy this config
+### 9. Copy this config
 
 ```bash
 # Clone the repo
@@ -484,7 +459,7 @@ cp bin/* ~/.local/bin/
 chmod +x ~/.local/bin/*
 ```
 
-### 11. Build and install argon-battery-rs
+### 10. Build and install argon-battery-rs
 
 The battery monitor is a Rust binary that reads the Argon battery gauge directly over I2C. It powers the waybar battery indicator, auto-adjusts brightness, and switches CPU governor on AC/battery transitions. See the [argon-battery-rs README](argon-battery-rs/README.md) for full details including stock daemon changes.
 
@@ -494,7 +469,7 @@ cargo build --release
 sudo cp target/release/argon-battery-rs /usr/local/bin/
 ```
 
-### 12. Set up lid close power management
+### 11. Set up lid close power management
 
 The lid-suspend script and sudoers config are required for the lid to properly lock, blank the display, and save power when closed. See the [Lid close power management](#lid-close-power-management) standalone guide for full details, but the short version:
 
@@ -519,7 +494,7 @@ lidshutdownsecs=0
 lidaction=suspend
 ```
 
-### 13. Log in to Sway
+### 12. Log in to Sway
 
 Reboot, and you'll see the gtkgreet login screen with your wallpaper. Enter your username and password to launch Sway. If everything is set up correctly, you should see the Catppuccin-themed desktop with waybar at the top.
 
@@ -531,7 +506,7 @@ systemctl status seatd
 groups  # make sure seat group is present
 ```
 
-### 14. Install Claude Code (optional)
+### 13. Install Claude Code (optional)
 
 For the Mod+C integration:
 
@@ -546,13 +521,32 @@ claude  # run once to authenticate
 
 ### System is extremely slow / NVMe timeouts
 
-The most common issue. Check that the kernel parameters are set:
+Some NVMe drives (observed with certain TeamGroup models) can become extremely sluggish or cause I/O timeouts due to power state transitions on the CM5's PCIe bus. This may not affect all drives.
+
+Check whether the kernel parameters are already set:
 
 ```bash
 cat /proc/cmdline | grep nvme_core
 ```
 
-If `nvme_core.default_ps_max_latency_us=0` and `pcie_aspm=off` are not present, see step 3 above.
+If `nvme_core.default_ps_max_latency_us=0` and `pcie_aspm=off` are not present, edit the kernel command line (**keep everything on one line**):
+
+```bash
+sudo nano /boot/firmware/cmdline.txt
+```
+
+Append to the existing line:
+
+```
+nvme_core.default_ps_max_latency_us=0 pcie_aspm=off
+```
+
+This disables NVMe power state transitions and PCIe Active State Power Management. Reboot and verify:
+
+```bash
+sudo reboot
+dmesg -T | grep -i nvme
+```
 
 ### Brightness keys don't work
 

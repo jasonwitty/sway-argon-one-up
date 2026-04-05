@@ -27,6 +27,9 @@ set $gnome-schema org.gnome.desktop.interface
 ### Output configuration
 output * scale 1.6
 
+### Set brightness and power profile based on AC/battery state
+exec ~/.local/bin/power-startup
+
 ### Idle configuration
 exec swayidle -w \
     timeout 300 'swaylock -f' \

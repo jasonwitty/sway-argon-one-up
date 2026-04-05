@@ -639,3 +639,10 @@ pgrep wob
 ```
 
 And restart manually if needed: `swaymsg reload`
+
+
+beta installer
+
+```
+curl -fsSL https://raw.githubusercontent.com/jasonwitty/sway-argon-one-up/main/install-beta.sh | bash                                
+```

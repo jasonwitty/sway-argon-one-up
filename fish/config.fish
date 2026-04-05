@@ -1,5 +1,5 @@
 #dracula theme
-fish_config theme choose "Dracula Official"
+# fish_config theme choose "Dracula Official"
 ## Set values
 # Hide welcome message & ensure we are reporting fish as shell
 set fish_greeting

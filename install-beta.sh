@@ -283,7 +283,7 @@ if command -v atuin &>/dev/null; then
     success "Atuin already installed"
 else
     info "Installing Atuin shell history..."
-    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh
+    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh -s -- --non-interactive
     success "Atuin installed"
 fi
 

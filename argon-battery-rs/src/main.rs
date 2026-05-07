@@ -90,7 +90,11 @@ fn read_battery() -> Result<BatteryReading, Box<dyn core::error::Error>> {
     // bit negative (0xFF), so treat near-zero discharge as "charging".
     let charging = (current_high & 0x80) == 0 || current_high == 0xFF;
 
-    Ok(BatteryReading { percent, charging, healthy })
+    Ok(BatteryReading {
+        percent,
+        charging,
+        healthy,
+    })
 }
 
 /// Check the rate-limit file and update it if a heal attempt is allowed.
@@ -295,7 +299,11 @@ fn main() {
         }
     };
 
-    let status = if reading.charging { "Charging" } else { "Discharging" };
+    let status = if reading.charging {
+        "Charging"
+    } else {
+        "Discharging"
+    };
     let governor = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
         .unwrap_or_default();
     let governor = governor.trim();

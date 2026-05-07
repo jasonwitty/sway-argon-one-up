@@ -416,9 +416,9 @@ sudo cp greetd/config.toml greetd/sway-config greetd/gtkgreet.css greetd/wallpap
 success "Config files copied"
 
 # ---------------------------------------------------------------------------
-# Phase 9: Build argon-battery-rs
+# Phase 9: Build argon-battery-rs and argon-fan
 # ---------------------------------------------------------------------------
-phase "Phase 9: Build argon-battery-rs"
+phase "Phase 9: Build argon-battery-rs and argon-fan"
 
 if [ -x /usr/local/bin/argon-battery-rs ]; then
     success "argon-battery-rs already installed"
@@ -428,6 +428,16 @@ else
     cargo build --release
     sudo cp target/release/argon-battery-rs /usr/local/bin/
     success "argon-battery-rs built and installed"
+fi
+
+if [ -x /usr/local/bin/argon-fan ]; then
+    success "argon-fan already installed"
+else
+    info "Building argon-fan (this may take a few minutes)..."
+    cd "$REPO_DIR/argon-fan"
+    cargo build --release
+    sudo install -m 0755 target/release/argon-fan /usr/local/bin/argon-fan
+    success "argon-fan built and installed"
 fi
 
 # ---------------------------------------------------------------------------
@@ -478,6 +488,32 @@ SUDOEOF
     sudo visudo -cf /etc/sudoers.d/browser-theme
     success "Browser theme sudoers configured"
 fi
+
+# argon-fan sudoers + systemd unit
+info "Configuring argon-fan service..."
+sudo tee /etc/sudoers.d/argon-fan > /dev/null <<SUDOEOF
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/argon-fan/config.json
+SUDOEOF
+sudo visudo -cf /etc/sudoers.d/argon-fan
+sudo tee /etc/systemd/system/argon-fan.service > /dev/null <<'EOF'
+[Unit]
+Description=Argon ONE UP fan control daemon
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/argon-fan daemon
+Restart=on-failure
+RestartSec=2
+KillMode=process
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now argon-fan
+success "argon-fan service installed and started"
 
 # Prevent logind from handling lid switch (Pi5 has no suspend support)
 info "Configuring logind lid switch override..."

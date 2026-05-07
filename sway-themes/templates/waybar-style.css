@@ -34,6 +34,7 @@ window#waybar {
 #network,
 #backlight,
 #custom-argon-battery,
+#custom-argon-fan,
 #custom-claude,
 #custom-help,
 #custom-theme,
@@ -72,6 +73,30 @@ window#waybar {
 
 #custom-argon-battery.critical {
   color: #@@RED@@;
+}
+
+#custom-argon-fan {
+  color: #@@TEAL@@;
+}
+
+#custom-argon-fan.silent {
+  color: #@@LAVENDER@@;
+}
+
+#custom-argon-fan.normal {
+  color: #@@TEAL@@;
+}
+
+#custom-argon-fan.turbo {
+  color: #@@YELLOW@@;
+}
+
+#custom-argon-fan.full {
+  color: #@@PEACH@@;
+}
+
+#custom-argon-fan.offline {
+  color: #@@SURFACE0@@;
 }
 
 #battery {

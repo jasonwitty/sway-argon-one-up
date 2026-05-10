@@ -1,0 +1,173 @@
+/* Base / structural styles. Palette + accent colors live in the
+   theme-rendered stylesheet at ~/.config/system-dashboard/dashboard.css,
+   which the runtime injects via <link id="theme-stylesheet">. CSS custom
+   properties from that file override the defaults below. */
+
+:root {
+  --bg: #1e1e2e;
+  --surface-0: #313244;
+  --surface-1: #45475a;
+  --text: #cdd6f4;
+  --subtext: #a6adc8;
+  --accent: #cba6f7;
+
+  --battery-good: #a6e3a1;
+  --battery-warn: #fab387;
+  --battery-crit: #f38ba8;
+  --battery-charge: #f9e2af;
+
+  --power: #74c7ec;
+  --idle: #94e2d5;
+  --idle-off: #fab387;
+  --idle-claude: #f9e2af;
+  --theme: #cba6f7;
+  --fan-silent: #b4befe;
+  --fan-normal: #94e2d5;
+  --fan-turbo: #f9e2af;
+  --fan-full: #fab387;
+  --fan-offline: #45475a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: "JetBrainsMono Nerd Font", "JetBrains Mono", monospace;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dashboard {
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+header {
+  padding: 0 4px 6px;
+}
+
+header .title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text);
+}
+
+.card {
+  background: var(--surface-0);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: background 120ms ease;
+}
+
+.card.clickable {
+  cursor: pointer;
+}
+
+.card.clickable:hover {
+  background: var(--surface-1);
+}
+
+.card.clickable:active {
+  transform: scale(0.99);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon {
+  font-size: 18px;
+  width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.label {
+  font-weight: 500;
+  color: var(--subtext);
+  flex-grow: 1;
+}
+
+.value {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chev {
+  color: var(--subtext);
+  opacity: 0.6;
+  font-size: 16px;
+  margin-left: 4px;
+}
+
+.sub {
+  font-size: 12px;
+  color: var(--subtext);
+  padding-left: 32px;
+  line-height: 1.4;
+}
+
+/* Battery bar */
+.bar {
+  margin-top: 6px;
+  margin-left: 32px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  transition: width 200ms ease, background 200ms ease;
+  background: var(--battery-good);
+}
+
+/* Per-card accent */
+.card.battery .icon { color: var(--battery-good); }
+.card.battery.warn .icon, .card.battery.warn .bar-fill { color: var(--battery-warn); background: var(--battery-warn); }
+.card.battery.crit .icon, .card.battery.crit .bar-fill { color: var(--battery-crit); background: var(--battery-crit); }
+.card.battery.charging .icon { color: var(--battery-charge); }
+
+.card.power .icon { color: var(--power); }
+.card.idle .icon { color: var(--idle); }
+.card.idle.off .icon { color: var(--idle-off); }
+.card.idle.claude .icon { color: var(--idle-claude); }
+.card.theme .icon { color: var(--theme); }
+
+.card.fan.silent .icon { color: var(--fan-silent); }
+.card.fan.normal .icon { color: var(--fan-normal); }
+.card.fan.turbo .icon { color: var(--fan-turbo); }
+.card.fan.full .icon { color: var(--fan-full); }
+.card.fan.offline .icon { color: var(--fan-offline); }
+
+/* Theme palette swatches */
+.swatches {
+  display: flex;
+  gap: 6px;
+  padding-left: 32px;
+  padding-top: 4px;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}

@@ -234,5 +234,8 @@ bindsym $mod+r mode "resize"
     bindsym $mod+n exec thunar
     # Calculator
     bindsym $mod+equal exec galculator
+    # System dashboard (replaces broken Argon dashboard binding on the battery key)
+    bindsym $mod+Shift+d exec system-dashboard
+    bindsym XF86Battery exec system-dashboard
 
 include /etc/sway/config.d/*

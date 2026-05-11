@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=System Dashboard
+GenericName=System Monitor
+Comment=Battery, power profile, idle state, theme, and fan status
+Exec=system-dashboard
+Icon=system-dashboard
+Terminal=false
+Categories=System;Settings;Utility;
+Keywords=battery;power;cpu;fan;system;
+StartupNotify=true
+StartupWMClass=system-dashboard

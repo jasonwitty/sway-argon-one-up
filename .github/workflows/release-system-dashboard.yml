@@ -1,0 +1,57 @@
+name: release-system-dashboard
+
+on:
+  push:
+    tags:
+      - 'system-dashboard-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build aarch64
+    runs-on: ubuntu-24.04-arm
+    defaults:
+      run:
+        working-directory: system-dashboard
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            patchelf
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Prepare release artifact
+        run: cp target/release/system-dashboard system-dashboard-aarch64
+
+      - name: Upload to GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: system-dashboard/system-dashboard-aarch64
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+      - name: Upload workflow artifact (for workflow_dispatch runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-dashboard-aarch64
+          path: system-dashboard/system-dashboard-aarch64
+          if-no-files-found: error

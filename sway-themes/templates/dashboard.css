@@ -1,0 +1,34 @@
+/* system-dashboard palette overrides — rendered to
+   ~/.config/system-dashboard/dashboard.css by switch-theme. Structural
+   styles live in the app's bundled dashboard.css; this file only
+   re-defines the CSS custom properties on :root. */
+
+:root {
+  --bg: #@@BASE@@;
+  --surface-0: #@@SURFACE0@@;
+  --surface-1: #@@SURFACE1@@;
+  --text: #@@TEXT@@;
+  --subtext: #@@SUBTEXT0@@;
+  --accent: #@@MAUVE@@;
+
+  --battery-good: #@@GREEN@@;
+  --battery-warn: #@@PEACH@@;
+  --battery-crit: #@@RED@@;
+  --battery-charge: #@@YELLOW@@;
+
+  --power: #@@SAPPHIRE@@;
+  --idle: #@@TEAL@@;
+  --idle-off: #@@PEACH@@;
+  --idle-claude: #@@YELLOW@@;
+  --theme: #@@MAUVE@@;
+
+  --fan-silent: #@@LAVENDER@@;
+  --fan-normal: #@@TEAL@@;
+  --fan-turbo: #@@YELLOW@@;
+  --fan-full: #@@PEACH@@;
+  --fan-offline: #@@SURFACE0@@;
+
+  --brightness: #@@YELLOW@@;
+  --volume: #@@MAUVE@@;
+  --volume-muted: #@@PEACH@@;
+}

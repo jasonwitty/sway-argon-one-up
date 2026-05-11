@@ -526,6 +526,46 @@ systemctl --user disable --now argononeupduser.service 2>/dev/null || true
 success "Argon Python daemons disabled"
 
 # ---------------------------------------------------------------------------
+# Phase 9b: Install system-dashboard (prebuilt aarch64 from GitHub Releases)
+# ---------------------------------------------------------------------------
+phase "Phase 9b: Install system-dashboard"
+
+# Runtime libraries for the Tauri webview. The -dev packages are NOT needed
+# at install time because we download a prebuilt binary instead of compiling.
+info "Installing webkit2gtk runtime..."
+sudo apt install -y libwebkit2gtk-4.1-0 libayatana-appindicator3-1
+success "Webkit runtime installed"
+
+if [ -x /usr/local/bin/system-dashboard ]; then
+    success "system-dashboard already installed"
+else
+    info "Downloading prebuilt system-dashboard for aarch64..."
+    SD_TAG=$(curl -fsSL "https://api.github.com/repos/jasonwitty/sway-argon-one-up/releases" 2>/dev/null \
+        | jq -r '[.[] | select(.tag_name | startswith("system-dashboard-v"))][0].tag_name // empty')
+    if [ -z "$SD_TAG" ]; then
+        error "Could not find a published system-dashboard release on GitHub."
+        error "Check https://github.com/jasonwitty/sway-argon-one-up/releases or tag a release."
+        exit 1
+    fi
+    info "Found release: $SD_TAG"
+    if ! curl -fsSL -o /tmp/system-dashboard \
+        "https://github.com/jasonwitty/sway-argon-one-up/releases/download/${SD_TAG}/system-dashboard-aarch64"; then
+        error "Failed to download system-dashboard binary from GitHub Releases."
+        error "Check internet connectivity and try again."
+        exit 1
+    fi
+    sudo install -m 0755 /tmp/system-dashboard /usr/local/bin/system-dashboard
+    rm -f /tmp/system-dashboard
+    success "system-dashboard installed"
+fi
+
+# .desktop file so any DE / launcher can list and start it
+info "Installing system-dashboard .desktop entry..."
+sudo install -m 0644 "$REPO_DIR/system-dashboard/system-dashboard.desktop" \
+    /usr/local/share/applications/system-dashboard.desktop
+success ".desktop entry installed"
+
+# ---------------------------------------------------------------------------
 # Phase 10: System configuration
 # ---------------------------------------------------------------------------
 phase "Phase 10: System configuration"

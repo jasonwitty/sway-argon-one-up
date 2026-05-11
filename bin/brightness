@@ -19,7 +19,14 @@ fi
 case "$1" in
     up)   new=$(( current + STEP > MAX ? MAX : current + STEP )) ;;
     down) new=$(( current - STEP < MIN ? MIN : current - STEP )) ;;
-    *)    echo "Usage: brightness up|down"; exit 1 ;;
+    set)
+        [[ -z "$2" || ! "$2" =~ ^[0-9]+$ ]] && { echo "Usage: brightness set <0-100>"; exit 1; }
+        new="$2"
+        (( new < MIN )) && new=$MIN
+        (( new > MAX )) && new=$MAX
+        ;;
+    get)  echo "$current"; exit 0 ;;
+    *)    echo "Usage: brightness up|down|set <0-100>|get"; exit 1 ;;
 esac
 
 # Set brightness directly via I2C (~1ms)

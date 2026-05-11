@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <main class="dashboard">
+    <header><span class="title">System</span></header>
+
+    <section class="card battery" id="card-battery">
+      <div class="row">
+        <span class="icon" id="battery-icon">󰁹</span>
+        <span class="label">Battery</span>
+        <span class="value" id="battery-value">—</span>
+      </div>
+      <div class="sub" id="battery-sub">reading…</div>
+      <div class="bar"><div class="bar-fill" id="battery-bar"></div></div>
+    </section>
+
+    <section class="card power clickable" id="card-power" data-action="cycle_power">
+      <div class="row">
+        <span class="icon" id="power-icon">󰾅</span>
+        <span class="label">Power</span>
+        <span class="value" id="power-value">—</span>
+        <span class="chev">›</span>
+      </div>
+      <div class="sub" id="power-sub">reading…</div>
+    </section>
+
+    <section class="card idle clickable" id="card-idle" data-action="cycle_idle">
+      <div class="row">
+        <span class="icon" id="idle-icon">󰌾</span>
+        <span class="label">Idle</span>
+        <span class="value" id="idle-value">—</span>
+        <span class="chev">›</span>
+      </div>
+      <div class="sub" id="idle-sub">reading…</div>
+    </section>
+
+    <section class="card theme clickable" id="card-theme" data-action="open_theme_picker">
+      <div class="row">
+        <span class="icon">󰏘</span>
+        <span class="label">Theme</span>
+        <span class="value" id="theme-value">—</span>
+        <span class="chev">›</span>
+      </div>
+      <div class="sub swatches" id="theme-swatches"></div>
+    </section>
+
+    <section class="card fan clickable" id="card-fan" data-action="open_fan_picker">
+      <div class="row">
+        <span class="icon" id="fan-icon">󰈐</span>
+        <span class="label">Fan</span>
+        <span class="value" id="fan-value">—</span>
+        <span class="chev">›</span>
+      </div>
+      <div class="sub" id="fan-sub">reading…</div>
+    </section>
+
+    <section class="card brightness" id="card-brightness">
+      <div class="row">
+        <span class="icon">󰃞</span>
+        <span class="label">Brightness</span>
+        <span class="value" id="brightness-value">—</span>
+      </div>
+      <input class="slider" type="range" id="brightness-slider"
+             min="0" max="100" step="1" value="50" />
+    </section>
+
+    <section class="card volume" id="card-volume">
+      <div class="row">
+        <span class="icon" id="volume-icon">󰕾</span>
+        <span class="label">Volume</span>
+        <span class="value" id="volume-value">—</span>
+      </div>
+      <input class="slider" type="range" id="volume-slider"
+             min="0" max="100" step="1" value="50" />
+    </section>
+  </main>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

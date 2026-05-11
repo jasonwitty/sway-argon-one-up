@@ -17,7 +17,12 @@ pub fn read() -> VolumeState {
         .output()
     {
         Ok(o) => o,
-        Err(_) => return VolumeState { percent: 0, muted: false },
+        Err(_) => {
+            return VolumeState {
+                percent: 0,
+                muted: false,
+            }
+        }
     };
     let s = String::from_utf8_lossy(&out.stdout);
     // wpctl prints e.g. "Volume: 0.70" or "Volume: 0.70 [MUTED]".

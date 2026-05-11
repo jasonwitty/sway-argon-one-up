@@ -83,10 +83,7 @@ fn open_fan_picker() -> Result<(), String> {
 /// → sway doesn't export it on some installs).
 fn is_tiling_wm() -> bool {
     let env = |k: &str| std::env::var(k).is_ok();
-    if env("SWAYSOCK")
-        || env("HYPRLAND_INSTANCE_SIGNATURE")
-        || env("NIRI_SOCKET")
-        || env("I3SOCK")
+    if env("SWAYSOCK") || env("HYPRLAND_INSTANCE_SIGNATURE") || env("NIRI_SOCKET") || env("I3SOCK")
     {
         return true;
     }

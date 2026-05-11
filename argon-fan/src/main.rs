@@ -358,6 +358,18 @@ fn cmd_picker() -> AnyResult<()> {
     Ok(())
 }
 
+// Best-effort desktop notification. We use this when the CLI is invoked
+// from waybar (right-click → edit-config) and there's no TTY for the
+// caller to see stderr — without this, a JSON validation failure is
+// silent.
+fn notify(summary: &str, body: &str) {
+    let _ = Command::new("notify-send")
+        .args(["-t", "8000", summary, body])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
 fn cmd_edit_config() -> AnyResult<()> {
     let p = config_path();
     if !p.exists() {
@@ -385,7 +397,9 @@ fn cmd_edit_config() -> AnyResult<()> {
     }
     if let Err(e) = serde_json::from_str::<Config>(&new_body) {
         let _ = fs::remove_file(&scratch);
-        return Err(format!("invalid config (not saved): {e}").into());
+        let msg = format!("invalid config (not saved): {e}");
+        notify("argon-fan: config not saved", &e.to_string());
+        return Err(msg.into());
     }
 
     match write_config_direct(&p, &new_body) {

@@ -9,7 +9,7 @@ WALLPAPER_OVERRIDE="$THEMES_DIR/wallpaper-override"
 WALLPAPERS_DIR="$HOME/.wallpapers"
 
 available_flavors() {
-    for f in "$THEMES_DIR"/{frappe,mocha,latte,macchiato,dracula,nord,gruvbox,monokai-dark,monokai-light}; do
+    for f in "$THEMES_DIR"/{frappe,mocha,latte,macchiato,dracula,nord,gruvbox,monokai-dark,monokai-light,arc-raiders}; do
         [ -f "$f" ] && basename "$f"
     done
 }
@@ -155,7 +155,7 @@ reload_foot_colors() {
 }
 
 set_browser_theme() {
-    local color="#${BASE}"
+    local color="#${BROWSER_COLOR:-$BASE}"
     local scheme
     if [ "$COLOR_SCHEME" = "prefer-dark" ]; then
         scheme="dark"

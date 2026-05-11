@@ -386,7 +386,7 @@ if [ -d "$REPO_DIR" ]; then
     rm -rf "$REPO_DIR"
 fi
 info "Cloning sway-argon-one-up..."
-git clone "$REPO_URL" "$REPO_DIR"
+git clone --depth=1 "$REPO_URL" "$REPO_DIR"
 
 cd "$REPO_DIR"
 

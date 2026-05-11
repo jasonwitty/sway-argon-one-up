@@ -15,6 +15,7 @@
     "custom/idle",
     "custom/scale",
     "cpu",
+    "custom/argon-fan",
     "pulseaudio",
     "backlight",
     "custom/argon-battery",
@@ -92,6 +93,14 @@
     "interval": 1,
     "tooltip": true,
     "on-click": "~/.local/bin/power-mode toggle"
+  },
+  "custom/argon-fan": {
+    "exec": "/usr/local/bin/argon-fan waybar",
+    "return-type": "json",
+    "interval": 3,
+    "tooltip": true,
+    "on-click": "/usr/local/bin/argon-fan picker",
+    "on-click-right": "/usr/local/bin/argon-fan edit-config"
   },
   "custom/theme": {
     "exec": "~/.local/bin/switch-theme --waybar-status",

@@ -471,6 +471,16 @@ else
     success "trackpad-guard built and installed"
 fi
 
+if [ -x /usr/local/bin/argon-fan ]; then
+    success "argon-fan already installed"
+else
+    info "Building argon-fan (this may take a few minutes)..."
+    cd "$REPO_DIR/argon-fan"
+    cargo build --release
+    sudo install -m 0755 target/release/argon-fan /usr/local/bin/argon-fan
+    success "argon-fan built and installed"
+fi
+
 # Upgrade path: remove the old Python trackpad-guard and its exec line from sway.
 if [ -f "$HOME/.local/bin/trackpad-guard" ] && head -1 "$HOME/.local/bin/trackpad-guard" | grep -q python; then
     info "Removing old Python trackpad-guard (replaced by Rust version)..."
@@ -563,6 +573,32 @@ SUDOEOF
     sudo visudo -cf /etc/sudoers.d/browser-theme
     success "Browser theme sudoers configured"
 fi
+
+# argon-fan sudoers + systemd unit
+info "Configuring argon-fan service..."
+sudo tee /etc/sudoers.d/argon-fan > /dev/null <<SUDOEOF
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/argon-fan/config.json
+SUDOEOF
+sudo visudo -cf /etc/sudoers.d/argon-fan
+sudo tee /etc/systemd/system/argon-fan.service > /dev/null <<'EOF'
+[Unit]
+Description=Argon ONE UP fan control daemon
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/argon-fan daemon
+Restart=on-failure
+RestartSec=2
+KillMode=process
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now argon-fan
+success "argon-fan service installed and started"
 
 # Prevent logind from handling lid switch (Pi5 has no suspend support)
 info "Configuring logind lid switch override..."

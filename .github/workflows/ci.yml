@@ -36,6 +36,34 @@ jobs:
       - name: Security audit
         run: cargo audit
 
+  argon-fan:
+    name: argon-fan checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: argon-fan
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -W clippy::all -W clippy::perf -D warnings
+
+      - name: Tests
+        run: cargo test --release
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Security audit
+        run: cargo audit
+
   shellcheck:
     name: Shell lint
     runs-on: ubuntu-latest

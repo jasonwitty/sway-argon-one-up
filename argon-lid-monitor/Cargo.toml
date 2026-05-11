@@ -1,0 +1,9 @@
+[package]
+name = "argon-lid-monitor"
+version = "0.1.0"
+edition = "2021"
+description = "Lid-open/close monitor for the Argon ONE UP case on Raspberry Pi 5"
+license = "Apache-2.0"
+
+[dependencies]
+gpiocdev = "0.8"

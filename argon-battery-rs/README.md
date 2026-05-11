@@ -24,6 +24,7 @@ The Argon ONE UP has an internal battery that isn't exposed through `/sys/class/
 - Charging detection with distinct icons
 - Automatic display brightness adjustment via DDC/CI on power state transitions (100% on AC, 40% on battery)
 - Automatic CPU governor switching on power state transitions (ondemand on AC, powersave on battery) via `sudo tee`
+- Self-heal: if the CW2217 is found in sleep mode or with the profile-loaded flag cleared (symptom: waybar stuck at 0%/charging with no real reading), the next poll reports "?%" and rewrites the 80-byte OCV profile to wake the IC. Rate-limited to once per 5 minutes.
 - Single binary, no runtime dependencies beyond a sudoers entry for governor control
 
 ## Prerequisites

@@ -1,0 +1,13 @@
+[Unit]
+Description=Disable sway touchpad while typing (AMIRA combo keyboard workaround)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/trackpad-guard
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=default.target

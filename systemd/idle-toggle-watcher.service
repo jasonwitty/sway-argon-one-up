@@ -1,0 +1,10 @@
+[Unit]
+Description=idle-toggle Claude-aware screen-lock watcher
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/idle-toggle run-watcher
+Restart=on-failure
+RestartSec=2s

@@ -7,9 +7,10 @@ TEMPLATES_DIR="$THEMES_DIR/templates"
 CURRENT_FILE="$THEMES_DIR/current"
 WALLPAPER_OVERRIDE="$THEMES_DIR/wallpaper-override"
 WALLPAPERS_DIR="$HOME/.wallpapers"
+LOCK_FILE="/tmp/.theme-switching"
 
 available_flavors() {
-    for f in "$THEMES_DIR"/{frappe,mocha,latte,macchiato,dracula,nord,gruvbox,monokai-dark,monokai-light}; do
+    for f in "$THEMES_DIR"/{frappe,mocha,latte,macchiato,dracula,nord,gruvbox,monokai-dark,monokai-light,arc-raiders}; do
         [ -f "$f" ] && basename "$f"
     done
 }
@@ -54,6 +55,14 @@ apply_theme() {
         echo "Available: $(available_flavors | tr '\n' ' ')"
         exit 1
     fi
+
+    # Only one theme switch at a time
+    if [ -f "$LOCK_FILE" ]; then
+        echo "Theme switch already in progress"
+        exit 0
+    fi
+    touch "$LOCK_FILE"
+    trap 'rm -f "$LOCK_FILE"' EXIT
 
     # Source the color definitions
     # shellcheck source=/dev/null
@@ -157,7 +166,7 @@ reload_foot_colors() {
 }
 
 set_browser_theme() {
-    local color="#${BASE}"
+    local color="#${BROWSER_COLOR:-$BASE}"
     local scheme
     if [ "$COLOR_SCHEME" = "prefer-dark" ]; then
         scheme="dark"
@@ -206,6 +215,14 @@ wallpaper_picker() {
 
 # Main
 case "${1:-}" in
+    --waybar-status)
+        if [ -f "$LOCK_FILE" ]; then
+            printf '{"text":"󰑓 ","tooltip":"Switching theme...","class":"switching"}\n'
+        else
+            printf '{"text":"󰏘 ","tooltip":"Theme: %s","class":"idle"}\n' "$(current_flavor)"
+        fi
+        exit 0
+        ;;
     --picker|-p)
         choice=$(picker)
         [ -n "$choice" ] && apply_theme "$choice"

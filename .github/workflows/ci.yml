@@ -10,9 +10,13 @@ jobs:
   rust:
     name: Rust checks
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [argon-battery-rs, argon-lid-monitor, trackpad-guard]
     defaults:
       run:
-        working-directory: argon-battery-rs
+        working-directory: ${{ matrix.crate }}
     steps:
       - uses: actions/checkout@v5
 
@@ -24,7 +28,35 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy -- -W clippy::all -W clippy::perf -D warnings
+        run: cargo clippy --all-targets -- -W clippy::all -W clippy::perf -D warnings
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Security audit
+        run: cargo audit
+
+  argon-fan:
+    name: argon-fan checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: argon-fan
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -W clippy::all -W clippy::perf -D warnings
+
+      - name: Tests
+        run: cargo test --release
 
       - name: Install cargo-audit
         run: cargo install cargo-audit

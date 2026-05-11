@@ -1,31 +1,76 @@
 #!/bin/bash
 # Toggle screen recording with wf-recorder
-# First call starts recording, second call stops it.
-# Usage: screen-record [area]
-#   area — select a region with slurp instead of full screen
+# First call starts recording immediately, second call stops it.
+# Usage: screen-record [area]    — toggle recording
+#        screen-record status    — JSON for waybar module
+#
+# Pi 5 has no hardware H.264 encoder — wf-recorder uses libx264 across
+# all 4 cores. We lock the codec to 30fps so encoder warmup is bearable
+# and the system doesn't stall during recording.
 
 VIDEOS_DIR="$HOME/Videos"
 PIDFILE="/tmp/.screen-record.pid"
+LOCKFILE="/tmp/.screen-record.lock"
+FPS=30
 
 mkdir -p "$VIDEOS_DIR"
 
+# Waybar status output
+if [ "${1:-}" = "status" ]; then
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        printf '{"text":"󰑊 REC","tooltip":"Recording...\\nMod+X to stop","class":"recording"}\n'
+    else
+        echo '{"text":"","tooltip":"","class":"idle"}'
+    fi
+    exit 0
+fi
+
+# Serialize toggle invocations so spam-pressing doesn't race two starts
+# into existence, leaving an orphan wf-recorder that hogs encode capacity.
+exec 9>"$LOCKFILE"
+if ! flock -n 9; then
+    notify-send -t 1500 "󰻃 Recording busy" "Toggle already in progress"
+    exit 0
+fi
+
+# Stop recording if already running
 if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-    # Stop recording
     kill -INT "$(cat "$PIDFILE")"
     rm -f "$PIDFILE"
     notify-send -t 2000 "󰻃 Recording saved" "$VIDEOS_DIR"
     exit 0
 fi
 
+# Acknowledge the keypress immediately. wf-recorder + libx264 take a
+# noticeable moment to warm up on the Pi 5; the user gets fast feedback
+# that something is happening rather than a silent multi-second wait.
+notify-send -t 1500 "󰑊 Starting recording..." "$FPS fps"
+
 FILENAME="$VIDEOS_DIR/$(date +%Y%m%d_%Hh%Mm%Ss).mp4"
 
+# wf-recorder 0.5 auto-invokes slurp for area selection if neither -o
+# nor -g is specified — even on a single-output system. Always pass -o
+# with the focused output so the recording starts immediately.
+OUTPUT=$(swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.focused==true)][0].name // empty')
+if [ -z "$OUTPUT" ]; then
+    OUTPUT=$(swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active==true)][0].name // empty')
+fi
+
+# `9>&-` closes the lock fd in the forked child so wf-recorder doesn't
+# inherit it — otherwise the lock is held for the entire recording and
+# the next Mod+X press thinks a toggle is "already in progress".
+# `nice -n 10` lowers CPU priority so sway stays responsive during the
+# software H.264 encode (Pi 5 has no hardware encoder — all 4 cores get
+# busy).
 if [ "${1:-}" = "area" ]; then
     GEOMETRY=$(slurp 2>/dev/null)
     [ -z "$GEOMETRY" ] && exit 0
-    wf-recorder -g "$GEOMETRY" -f "$FILENAME" &
+    nice -n 10 wf-recorder -r "$FPS" -g "$GEOMETRY" -f "$FILENAME" 9>&- &
+elif [ -n "$OUTPUT" ]; then
+    nice -n 10 wf-recorder -r "$FPS" -o "$OUTPUT" -f "$FILENAME" 9>&- &
 else
-    wf-recorder -f "$FILENAME" &
+    nice -n 10 wf-recorder -r "$FPS" -f "$FILENAME" 9>&- &
 fi
 
 echo $! > "$PIDFILE"
-notify-send -t 2000 "󰑊 Recording started" "Press Mod+Shift+R to stop"
+notify-send -t 2000 "󰑊 Recording started" "Mod+X to stop"

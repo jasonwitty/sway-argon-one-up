@@ -108,7 +108,6 @@ fn run_detached(cmd: &str, args: &[&str]) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Hide decorations on tiling WMs — they handle window management
             // themselves, and a CSD titlebar with min/max buttons is just

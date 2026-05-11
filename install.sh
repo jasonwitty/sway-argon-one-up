@@ -200,7 +200,7 @@ sudo apt install -y \
     ukui-polkit \
     ddcutil i2c-tools \
     fish \
-    bat eza fzf zoxide ugrep \
+    bat eza fzf zoxide ugrep jq \
     grim slurp wl-clipboard wf-recorder libnotify-bin \
     xdg-desktop-portal-wlr \
     fonts-firacode \
@@ -394,7 +394,7 @@ info "Copying config files..."
 
 # Sway and desktop configs
 mkdir -p ~/.config
-cp -r sway waybar wob wofi foot mako swaylock gtk-3.0 sway-themes fish ~/.config/
+cp -r sway waybar wob wofi foot mako swaylock gtk-3.0 sway-themes fish wireplumber ~/.config/
 cp starship.toml ~/.config/
 cp mimeapps.list ~/.config/
 

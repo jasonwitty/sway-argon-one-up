@@ -28,14 +28,25 @@
   "pulseaudio": {
     "format": "{icon} {volume}%",
     "format-muted": "󰝟 muted",
+    "format-bluetooth": "󰂰 {volume}%",
+    "format-bluetooth-muted": "󰂲 muted",
     "format-icons": {
+      "headphone": "󰋋",
+      "hands-free": "󰂑",
+      "headset": "󰋎",
+      "phone": "",
+      "portable": "",
+      "car": "",
       "default": [
         "󰕿",
         "󰖀",
         "󰕾"
       ]
     },
-    "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+    "tooltip": true,
+    "tooltip-format": "{desc} — {volume}%\nRight-click: choose output",
+    "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+    "on-click-right": "audio-sink-picker"
   },
   "network": {
     "format-wifi": "󰤨 {essid}",

@@ -1,6 +1,6 @@
 # sway-argon-one-up
 
-A complete Sway desktop environment for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system), a 14-inch laptop powered by the Raspberry Pi Compute Module 5. Includes a one-command installer, a 10-theme switcher with matching wallpapers and live terminal recoloring, a dynamic keybinding help overlay, instant brightness control via direct I2C, display scaling controls, battery and power management, and Claude Code integration.
+A complete Sway desktop environment for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system), a 14-inch laptop powered by the Raspberry Pi Compute Module 5. Includes a one-command installer, a 10-theme switcher with matching wallpapers and live terminal recoloring, a dynamic keybinding help overlay, instant brightness control via direct I2C, display scaling controls, custom Rust daemons for battery / fan / lid / touchpad / audio, a Tauri-based system dashboard, automatic Bluetooth audio routing, and Claude Code integration.
 
 ![screenshot](screenshot.png)
 
@@ -22,11 +22,11 @@ This setup is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produc
 
 | Component | Description |
 |-----------|-------------|
-| `sway/` | Sway config with themed window colors, idle lock, touchpad, media keys |
-| `waybar/` | Top bar with workspaces, clock, CPU, volume, backlight, Argon battery, tray, theme/scale/Claude/help/power buttons |
-| `sway-themes/` | 10 theme definitions + templates for all themed apps (sway, waybar, foot, mako, swaylock, wofi, wob, Brave, Chromium, Thunar/GTK) |
+| `sway/` | Sway config with themed window colors, idle lock, touchpad, media keys, system-dashboard bindings |
+| `waybar/` | Top bar with workspaces, clock, CPU, volume, backlight, fan, Argon battery, idle/lock toggle, audio sink picker, tray, theme/scale/Claude/help/power buttons |
+| `sway-themes/` | 10 theme definitions + templates for all themed apps (sway, waybar, foot, mako, swaylock, wofi, wob, Brave, Chromium, Thunar/GTK, system-dashboard) |
 | `wallpapers/` | Matching wallpaper for each theme (auto-applied on theme switch) |
-| `bin/` | `switch-theme`, `sway-scale`, `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `lid-suspend`, `power-mode`, `power-startup`, `powermenu`, `screen-record`, `argon-battery` |
+| `bin/` | `switch-theme`, `sway-scale`, `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `lid-suspend`, `power-mode`, `power-startup`, `powermenu`, `screen-record`, `argon-battery`, `idle-toggle`, `audio-sink-picker` |
 | `foot/` | Terminal emulator config with live-recolored theme support |
 | `wofi/` | App launcher and help overlay styles |
 | `wob/` | Wayland Overlay Bar config for brightness/volume indicators |
@@ -37,7 +37,13 @@ This setup is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produc
 | `fish/` | Fish shell config |
 | `starship.toml` | Starship prompt config |
 | `greetd/` | Login screen: greetd + gtkgreet with Catppuccin Frappe theme |
-| `argon-battery-rs/` | Rust battery monitor with auto brightness/governor switching |
+| `wireplumber/` | WirePlumber policy: auto-route audio to Bluetooth devices on connect, prefer A2DP |
+| `mpv/` | mpv config tuned for Pi 5 (hardware-friendly defaults) |
+| `argon-battery-rs/` | Rust battery monitor; CW2217 fuel-gauge over I2C, auto brightness + governor switching on AC/battery transitions |
+| `argon-fan/` | Rust PWM fan-control daemon with mode-based curves (silent / normal / turbo / full); waybar tile + wofi picker |
+| `argon-lid-monitor/` | Rust GPIO 27 lid-event monitor; shells to `lid-suspend` to lock + sleep displays and switch governor on close |
+| `trackpad-guard/` | Rust DWT (disable-while-typing) daemon for the AMIRA combo keyboard/touchpad; `Mod+Shift+T` triggers a USB rebind rescue |
+| `system-dashboard/` | Tauri 2 desktop app bound to the hardware battery key (`Pause`): battery, power profile, idle mode, theme, fan, brightness slider, volume slider — all live |
 
 ## Themes
 

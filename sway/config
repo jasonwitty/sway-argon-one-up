@@ -215,8 +215,6 @@ bindsym $mod+r mode "resize"
     # Special keys to adjust brightness via DDC
     bindsym --locked XF86MonBrightnessDown exec ~/.local/bin/brightness down
     bindsym --locked XF86MonBrightnessUp exec ~/.local/bin/brightness up
-    # Argon battery dashboard
-    bindsym Pause exec foot -e sudo /usr/bin/python3 /etc/argon/argondashboard.py
     # Screenshots
     bindsym Print exec grim
     bindsym $mod+Print exec grim -g "$(slurp)" - | wl-copy
@@ -235,7 +233,9 @@ bindsym $mod+r mode "resize"
     # Calculator
     bindsym $mod+equal exec galculator
     # System dashboard (replaces broken Argon dashboard binding on the battery key)
+    # The Argon ONE UP keyboard emits `Pause` for its battery key.
     bindsym $mod+Shift+d exec system-dashboard
+    bindsym Pause exec system-dashboard
     bindsym XF86Battery exec system-dashboard
 
 include /etc/sway/config.d/*

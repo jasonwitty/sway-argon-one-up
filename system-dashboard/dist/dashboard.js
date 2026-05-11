@@ -9,6 +9,29 @@ const { listen } = window.__TAURI__.event;
 const POLL_FOCUS_MS = 2000;
 const POLL_BLUR_MS = 10000;
 
+const BATTERY_GLYPH_DISCHARGE = {
+  100: "\u{F0079}",
+  90: "\u{F0082}",
+  80: "\u{F0081}",
+  70: "\u{F0080}",
+  60: "\u{F007F}",
+  50: "\u{F007E}",
+  40: "\u{F007D}",
+  30: "\u{F007C}",
+  20: "\u{F007B}",
+  10: "\u{F007A}",
+  0: "\u{F008E}", // battery-outline (near-empty)
+};
+
+const BATTERY_GLYPH_CHARGING = "\u{F0084}"; // battery-charging
+
+function batteryIcon(percent, charging, full) {
+  if (full) return BATTERY_GLYPH_DISCHARGE[100];
+  if (charging) return BATTERY_GLYPH_CHARGING;
+  const tier = Math.min(100, Math.max(0, Math.floor(percent / 10) * 10));
+  return BATTERY_GLYPH_DISCHARGE[tier] || BATTERY_GLYPH_DISCHARGE[10];
+}
+
 const FAN_GLYPH = {
   silent: "\u{F0A9F}",
   normal: "\u{F0210}",
@@ -30,6 +53,12 @@ const POWER_LABEL = {
   powersave: "Powersave",
 };
 
+const POWER_GLYPH = {
+  performance: "\u{F140B}", // lightning-bolt
+  ondemand: "\u{F1F85}",    // gauge / balanced
+  powersave: "\u{F032A}",   // leaf / battery-save
+};
+
 let pollHandle = null;
 
 async function refresh() {
@@ -40,6 +69,8 @@ async function refresh() {
     renderIdle(s.idle);
     renderTheme(s.theme);
     renderFan(s.fan);
+    renderBrightness(s.brightness);
+    renderVolume(s.volume);
   } catch (e) {
     console.error("snapshot failed", e);
   }
@@ -50,12 +81,19 @@ function renderBattery(b) {
   const value = document.getElementById("battery-value");
   const sub = document.getElementById("battery-sub");
   const bar = document.getElementById("battery-bar");
+  const icon = document.getElementById("battery-icon");
+
+  const full = b.percent >= 100;
 
   value.textContent = `${b.percent}%`;
   bar.style.width = `${b.percent}%`;
+  icon.textContent = batteryIcon(b.percent, b.charging, full);
 
   card.classList.remove("warn", "crit", "charging");
-  if (b.charging) {
+  if (full) {
+    // Fully charged: stay on the default green/good styling regardless
+    // of the charging flag (CW2217 still reports charging=true on AC).
+  } else if (b.charging) {
     card.classList.add("charging");
   } else if (b.percent < 20) {
     card.classList.add("crit");
@@ -63,7 +101,9 @@ function renderBattery(b) {
     card.classList.add("warn");
   }
 
-  if (b.charging) {
+  if (full) {
+    sub.textContent = b.charging ? "Fully charged" : "Full";
+  } else if (b.charging) {
     sub.textContent = "Charging";
   } else if (b.time_remaining_min != null) {
     const h = Math.floor(b.time_remaining_min / 60);
@@ -79,6 +119,8 @@ function renderPower(p) {
     POWER_LABEL[p.governor] || p.governor;
   document.getElementById("power-sub").textContent =
     `${p.governor} · ${p.on_ac ? "on AC" : "on battery"}`;
+  const icon = POWER_GLYPH[p.governor];
+  if (icon) document.getElementById("power-icon").textContent = icon;
 }
 
 function renderIdle(i) {
@@ -120,10 +162,18 @@ function renderIdle(i) {
   }
 }
 
+let lastThemeName = null;
+
 function renderTheme(t) {
   document.getElementById("theme-value").textContent = pretty(t.name);
   applyThemeStylesheet(t.stylesheet);
-  renderSwatches();
+  // Rebuild swatches from the actual stylesheet on every theme change so
+  // the dots reflect whatever palette is currently rendered (not the
+  // fallback baked into the bundled CSS).
+  if (t.name !== lastThemeName) {
+    renderSwatches(t.stylesheet);
+    lastThemeName = t.name;
+  }
 }
 
 function pretty(name) {
@@ -144,9 +194,9 @@ function applyThemeStylesheet(css) {
   el.textContent = css || "";
 }
 
-function renderSwatches() {
+function renderSwatches(stylesheet) {
   const target = document.getElementById("theme-swatches");
-  if (target.children.length > 0) return;
+  target.innerHTML = "";
   const vars = [
     "--accent",
     "--power",
@@ -155,9 +205,12 @@ function renderSwatches() {
     "--fan-turbo",
   ];
   for (const v of vars) {
+    const re = new RegExp(`${v}:\\s*(#[0-9a-fA-F]+)`);
+    const m = stylesheet && stylesheet.match(re);
+    const color = m ? m[1] : null;
     const dot = document.createElement("span");
     dot.className = "swatch";
-    dot.style.background = `var(${v})`;
+    dot.style.background = color || `var(${v})`;
     target.appendChild(dot);
   }
 }
@@ -183,6 +236,61 @@ function renderFan(f) {
   sub.textContent = `${f.temp_c.toFixed(0)}°C · PWM ${f.pwm}/255 (${f.pwm_pct}%)`;
 }
 
+function renderBrightness(b) {
+  const slider = document.getElementById("brightness-slider");
+  if (!sliderIsBeingDragged(slider)) slider.value = String(b.percent);
+  document.getElementById("brightness-value").textContent = `${b.percent}%`;
+}
+
+function renderVolume(v) {
+  const card = document.getElementById("card-volume");
+  const slider = document.getElementById("volume-slider");
+  const icon = document.getElementById("volume-icon");
+  card.classList.toggle("muted", !!v.muted);
+  if (!sliderIsBeingDragged(slider)) slider.value = String(v.percent);
+  document.getElementById("volume-value").textContent =
+    v.muted ? "Muted" : `${v.percent}%`;
+  icon.textContent = v.muted
+    ? "\u{F075F}" // volume-mute
+    : v.percent < 33
+      ? "\u{F057F}" // volume-low
+      : v.percent < 66
+        ? "\u{F0580}" // volume-medium
+        : "\u{F057E}"; // volume-high
+}
+
+// While the user is dragging the slider, don't fight them by overwriting
+// the value from the poll loop.
+function sliderIsBeingDragged(slider) {
+  return slider.dataset.dragging === "1";
+}
+
+function bindSlider(id, action) {
+  const slider = document.getElementById(id);
+  let pending = null;
+  const send = (value) => {
+    pending = null;
+    invoke(action, { level: value }).catch((e) =>
+      console.error(`${action} failed`, e),
+    );
+  };
+  slider.addEventListener("pointerdown", () => (slider.dataset.dragging = "1"));
+  slider.addEventListener("pointerup", () => {
+    slider.dataset.dragging = "0";
+    // Force a refresh shortly after the user releases so the displayed
+    // value re-syncs with the device-reported value.
+    setTimeout(refresh, 200);
+  });
+  slider.addEventListener("input", () => {
+    const value = Number(slider.value);
+    document.getElementById(`${id.split("-")[0]}-value`).textContent =
+      `${value}%`;
+    // Coalesce: only send the most recent value every ~80ms while dragging.
+    if (pending) clearTimeout(pending);
+    pending = setTimeout(() => send(value), 80);
+  });
+}
+
 function startPolling(intervalMs) {
   if (pollHandle) clearInterval(pollHandle);
   pollHandle = setInterval(refresh, intervalMs);
@@ -199,8 +307,15 @@ document.querySelectorAll(".clickable").forEach((card) => {
   });
 });
 
-(async () => {
-  await listen("theme-stylesheet-changed", refresh);
-  await refresh();
-  startPolling(POLL_FOCUS_MS);
-})();
+bindSlider("brightness-slider", "set_brightness");
+bindSlider("volume-slider", "set_volume");
+
+// Register the theme-change listener but don't block startup on it.
+listen("theme-stylesheet-changed", refresh).catch((e) =>
+  console.error("listen failed", e),
+);
+
+// Start polling first so the dashboard catches up even if the very first
+// refresh fires before Tauri's IPC bridge is ready.
+startPolling(POLL_FOCUS_MS);
+refresh();

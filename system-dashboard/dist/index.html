@@ -13,7 +13,7 @@
 
     <section class="card battery" id="card-battery">
       <div class="row">
-        <span class="icon">󰂀</span>
+        <span class="icon" id="battery-icon">󰁹</span>
         <span class="label">Battery</span>
         <span class="value" id="battery-value">—</span>
       </div>
@@ -23,7 +23,7 @@
 
     <section class="card power clickable" id="card-power" data-action="cycle_power">
       <div class="row">
-        <span class="icon"></span>
+        <span class="icon" id="power-icon">󰾅</span>
         <span class="label">Power</span>
         <span class="value" id="power-value">—</span>
         <span class="chev">›</span>
@@ -59,6 +59,26 @@
         <span class="chev">›</span>
       </div>
       <div class="sub" id="fan-sub">reading…</div>
+    </section>
+
+    <section class="card brightness" id="card-brightness">
+      <div class="row">
+        <span class="icon">󰃞</span>
+        <span class="label">Brightness</span>
+        <span class="value" id="brightness-value">—</span>
+      </div>
+      <input class="slider" type="range" id="brightness-slider"
+             min="0" max="100" step="1" value="50" />
+    </section>
+
+    <section class="card volume" id="card-volume">
+      <div class="row">
+        <span class="icon" id="volume-icon">󰕾</span>
+        <span class="label">Volume</span>
+        <span class="value" id="volume-value">—</span>
+      </div>
+      <input class="slider" type="range" id="volume-slider"
+             min="0" max="100" step="1" value="50" />
     </section>
   </main>
 

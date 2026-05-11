@@ -26,6 +26,10 @@
   --fan-turbo: #f9e2af;
   --fan-full: #fab387;
   --fan-offline: #45475a;
+
+  --brightness: #f9e2af;
+  --volume: #ca9ee6;
+  --volume-muted: #fab387;
 }
 
 * {
@@ -157,6 +161,51 @@ header .title {
 .card.fan.turbo .icon { color: var(--fan-turbo); }
 .card.fan.full .icon { color: var(--fan-full); }
 .card.fan.offline .icon { color: var(--fan-offline); }
+
+.card.brightness .icon { color: var(--brightness); }
+.card.volume .icon { color: var(--volume); }
+.card.volume.muted .icon { color: var(--volume-muted); }
+
+/* Range slider */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: calc(100% - 32px);
+  margin-left: 32px;
+  margin-top: 8px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface-0);
+  margin-top: -5px;
+  cursor: pointer;
+  transition: transform 100ms ease;
+}
+
+.slider:hover::-webkit-slider-thumb,
+.slider:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+.card.brightness .slider::-webkit-slider-thumb { background: var(--brightness); }
+.card.volume .slider::-webkit-slider-thumb { background: var(--volume); }
+.card.volume.muted .slider::-webkit-slider-thumb { background: var(--volume-muted); }
 
 /* Theme palette swatches */
 .swatches {

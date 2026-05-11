@@ -7,14 +7,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod battery;
+mod brightness;
 mod fan;
 mod idle;
 mod power;
 mod theme;
+mod volume;
 
 use serde::Serialize;
 use std::process::Command;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 #[derive(Serialize, Clone, Debug)]
 struct Snapshot {
@@ -23,6 +25,8 @@ struct Snapshot {
     idle: idle::IdleState,
     theme: theme::ThemeState,
     fan: fan::FanState,
+    brightness: brightness::BrightnessState,
+    volume: volume::VolumeState,
 }
 
 #[tauri::command]
@@ -35,7 +39,19 @@ fn snapshot() -> Snapshot {
         idle: idle::read(),
         theme: theme::read(),
         fan: fan::read(),
+        brightness: brightness::read(),
+        volume: volume::read(),
     }
+}
+
+#[tauri::command]
+fn set_brightness(level: u8) -> Result<(), String> {
+    brightness::set(level)
+}
+
+#[tauri::command]
+fn set_volume(level: u8) -> Result<(), String> {
+    volume::set(level)
 }
 
 #[tauri::command]
@@ -58,6 +74,33 @@ fn open_fan_picker() -> Result<(), String> {
     run_detached("argon-fan", &["picker"])
 }
 
+/// Detect whether we're running under a tiling window manager. Used to
+/// suppress our CSD titlebar — tiling WMs already manage window placement
+/// and the buttons just take up space.
+///
+/// We check each WM's signature IPC-socket env var first because
+/// XDG_CURRENT_DESKTOP isn't reliably set on minimal sessions (e.g. greetd
+/// → sway doesn't export it on some installs).
+fn is_tiling_wm() -> bool {
+    let env = |k: &str| std::env::var(k).is_ok();
+    if env("SWAYSOCK")
+        || env("HYPRLAND_INSTANCE_SIGNATURE")
+        || env("NIRI_SOCKET")
+        || env("I3SOCK")
+    {
+        return true;
+    }
+    match std::env::var("XDG_CURRENT_DESKTOP") {
+        Ok(s) => {
+            let s = s.to_lowercase();
+            ["sway", "hyprland", "i3", "river", "niri", "wayfire"]
+                .iter()
+                .any(|w| s.contains(w))
+        }
+        Err(_) => false,
+    }
+}
+
 fn run_detached(cmd: &str, args: &[&str]) -> Result<(), String> {
     Command::new(cmd)
         .args(args)
@@ -70,6 +113,16 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            // Hide decorations on tiling WMs — they handle window management
+            // themselves, and a CSD titlebar with min/max buttons is just
+            // visual noise. Stacking environments (GNOME/KDE/Cinnamon) keep
+            // the decorations so users get familiar affordances.
+            if is_tiling_wm() {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
+
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 use notify::{RecursiveMode, Watcher};
@@ -96,7 +149,9 @@ fn main() {
             cycle_power,
             cycle_idle,
             open_theme_picker,
-            open_fan_picker
+            open_fan_picker,
+            set_brightness,
+            set_volume
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

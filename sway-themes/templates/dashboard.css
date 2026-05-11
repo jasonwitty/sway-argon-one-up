@@ -27,4 +27,8 @@
   --fan-turbo: #@@YELLOW@@;
   --fan-full: #@@PEACH@@;
   --fan-offline: #@@SURFACE0@@;
+
+  --brightness: #@@YELLOW@@;
+  --volume: #@@MAUVE@@;
+  --volume-muted: #@@PEACH@@;
 }

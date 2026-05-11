@@ -19,23 +19,12 @@ const BATTERY_CAPACITY_MAH: u32 = 4500;
 /// magnitude reported by `i2cget`.
 const CURRENT_SCALE_MA_PER_LSB: i32 = 20;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct BatteryState {
     pub percent: u8,
     pub charging: bool,
     pub time_remaining_min: Option<u32>,
     pub current_ma: Option<i32>,
-}
-
-impl Default for BatteryState {
-    fn default() -> Self {
-        Self {
-            percent: 0,
-            charging: false,
-            time_remaining_min: None,
-            current_ma: None,
-        }
-    }
 }
 
 fn current_ma(high: u8) -> i32 {
@@ -91,7 +80,7 @@ mod tests {
     fn current_ma_sign_convention() {
         assert_eq!(current_ma(0x00), 0);
         assert_eq!(current_ma(0x10), 16 * CURRENT_SCALE_MA_PER_LSB);
-        assert_eq!(current_ma(0xff), -1 * CURRENT_SCALE_MA_PER_LSB);
+        assert_eq!(current_ma(0xff), -CURRENT_SCALE_MA_PER_LSB);
         assert_eq!(current_ma(0x80), -128 * CURRENT_SCALE_MA_PER_LSB);
     }
 }

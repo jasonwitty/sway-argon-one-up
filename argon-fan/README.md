@@ -83,9 +83,33 @@ argon-fan daemon          # the control loop (run by systemd)
 argon-fan set <mode>      # switch active mode (silent | normal | turbo | full)
 argon-fan status          # print current state JSON
 argon-fan picker          # wofi-based mode picker
-argon-fan edit-config     # open config in micro (validates JSON before saving)
+argon-fan edit-config     # edit /etc/argon-fan/config.json (see Editing the config below)
 argon-fan waybar          # emit one line of JSON for waybar
 ```
+
+### Editing the config
+
+`argon-fan edit-config` (also bound to the waybar tile's right-click) is a
+"safe edit" wrapper. The flow:
+
+1. Copies `/etc/argon-fan/config.json` to `/tmp/argon-fan-edit.json`.
+2. Opens the scratch file in `foot -e micro`.
+3. **You edit and save** (`Ctrl+S` in micro). The scratch file is updated,
+   but the running daemon's config is **not** touched yet.
+4. **You quit the editor** (`Ctrl+Q` in micro, or close the foot window).
+   This is the trigger — validation only runs when the editor exits.
+5. The CLI re-reads the scratch file and tries to parse it as a `Config`:
+   - On success: the new content is written back to `/etc/argon-fan/config.json`
+     (via `sudo -n /usr/bin/tee` if you're not root). The daemon picks it up
+     via mtime polling within ~2 seconds.
+   - On failure: the running `/etc/argon-fan/config.json` is left untouched,
+     a desktop notification fires via `notify-send` with the parser's exact
+     error (e.g. *"expected `,` at line 12 col 8"*), and the scratch file is
+     cleaned up. Mode flips you've made via picker continue to work.
+
+**Common mistake**: pressing `Ctrl+S` repeatedly without ever quitting the
+editor — the daemon will never see the changes because step 4 never fires.
+The validation + notify code path is gated on the editor process exiting.
 
 Mode switches propagate to the running daemon via config-file mtime polling — there's a ≤2s lag between `argon-fan set turbo` and the daemon applying the new curve.
 

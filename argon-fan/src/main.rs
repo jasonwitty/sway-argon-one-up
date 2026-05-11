@@ -45,61 +45,48 @@ struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let pt = |temp_c: f32, pwm: u32| CurvePoint { temp_c, pwm };
+        let curve = |points: Vec<CurvePoint>| ModeCurve { curve: points };
+
         let mut modes = BTreeMap::new();
+
+        // silent: prioritize quietness; fan stays off until the chip is
+        // genuinely hot, then ramps confidently past the fan-stall floor.
+        // Pi 5 self-throttles at 80°C — silent mode trusts that ceiling.
         modes.insert(
             "silent".into(),
-            ModeCurve {
-                curve: vec![
-                    CurvePoint {
-                        temp_c: 60.0,
-                        pwm: 0,
-                    },
-                    CurvePoint {
-                        temp_c: 85.0,
-                        pwm: 217,
-                    },
-                ],
-            },
+            curve(vec![pt(65.0, 0), pt(68.0, 80), pt(85.0, 230)]),
         );
+
+        // normal: balanced daily-use curve targeting <60°C under typical
+        // load. Fan reaches max at 58°C, two degrees of buffer before the
+        // 60°C target.
         modes.insert(
             "normal".into(),
-            ModeCurve {
-                curve: vec![
-                    CurvePoint {
-                        temp_c: 50.0,
-                        pwm: 0,
-                    },
-                    CurvePoint {
-                        temp_c: 75.0,
-                        pwm: 255,
-                    },
-                ],
-            },
+            curve(vec![
+                pt(45.0, 0),
+                pt(48.0, 100),
+                pt(55.0, 200),
+                pt(58.0, 250),
+            ]),
         );
+
+        // turbo: aggressive cooling for sustained heavy load, targeting
+        // <50°C. Fan reaches max at 48°C — same two-degree buffer.
         modes.insert(
             "turbo".into(),
-            ModeCurve {
-                curve: vec![
-                    CurvePoint {
-                        temp_c: 45.0,
-                        pwm: 0,
-                    },
-                    CurvePoint {
-                        temp_c: 65.0,
-                        pwm: 255,
-                    },
-                ],
-            },
+            curve(vec![
+                pt(38.0, 0),
+                pt(40.0, 120),
+                pt(45.0, 220),
+                pt(48.0, 250),
+            ]),
         );
-        modes.insert(
-            "full".into(),
-            ModeCurve {
-                curve: vec![CurvePoint {
-                    temp_c: 0.0,
-                    pwm: 255,
-                }],
-            },
-        );
+
+        // full: pinned at 250 (the kernel device-tree's chosen cap).
+        // Going to 255 doesn't increase airflow on this fan, only noise.
+        modes.insert("full".into(), curve(vec![pt(0.0, 250)]));
+
         Self {
             active_mode: "normal".into(),
             poll_interval_sec: 2,
@@ -631,13 +618,15 @@ mod tests {
 
     #[test]
     fn default_full_mode_is_always_max_pwm() {
+        // `full` is pinned at 250 (the device-tree's chosen cap — going
+        // higher doesn't increase airflow, only noise).
         let c = Config {
             active_mode: "full".into(),
             ..Config::default()
         };
-        assert_eq!(c.pwm_for(0.0), 255);
-        assert_eq!(c.pwm_for(40.0), 255);
-        assert_eq!(c.pwm_for(80.0), 255);
+        assert_eq!(c.pwm_for(0.0), 250);
+        assert_eq!(c.pwm_for(40.0), 250);
+        assert_eq!(c.pwm_for(80.0), 250);
     }
 
     #[test]
@@ -646,8 +635,10 @@ mod tests {
             active_mode: "silent".into(),
             ..Config::default()
         };
+        // silent stays off until 65°C — generous quiet zone.
         assert_eq!(c.pwm_for(40.0), 0);
         assert_eq!(c.pwm_for(60.0), 0);
+        assert_eq!(c.pwm_for(65.0), 0);
         assert!(c.pwm_for(85.0) > 0);
     }
 

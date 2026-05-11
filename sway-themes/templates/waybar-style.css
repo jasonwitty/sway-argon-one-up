@@ -37,6 +37,8 @@ window#waybar {
 #custom-claude,
 #custom-help,
 #custom-theme,
+#custom-idle,
+#custom-recording,
 #custom-scale,
 #custom-power {
   padding: 0 8px;
@@ -100,6 +102,27 @@ window#waybar {
 
 #custom-theme {
   color: #@@MAUVE@@;
+}
+
+#custom-theme.switching {
+  color: #@@YELLOW@@;
+}
+
+#custom-idle {
+  color: #@@TEAL@@;
+}
+
+#custom-idle.off {
+  color: #@@PEACH@@;
+}
+
+#custom-idle.claude,
+#custom-idle.claude-active {
+  color: #@@PEACH@@;
+}
+
+#custom-recording.recording {
+  color: #@@RED@@;
 }
 
 #custom-scale {

@@ -1,0 +1,189 @@
+#!/bin/bash
+# Toggle screen lock/idle behavior between three modes:
+#   on     — swayidle runs normally (lock at 5min, display off at 10min)
+#   off    — swayidle killed, no locking
+#   claude — auto-inhibit while Claude Code is actively working
+#
+# Usage: idle-toggle status | cycle | on | off | claude
+
+STATE_FILE="/tmp/.idle-toggle-mode"
+WATCHER_PID="/tmp/.idle-toggle-watcher.pid"
+CLAUDE_STATE="/tmp/.idle-toggle-claude-active"
+WATCHER_SERVICE="idle-toggle-watcher.service"
+
+SWAYIDLE_CMD=(swayidle -w
+    timeout 300 'swaylock -f'
+    timeout 600 'swaymsg "output * power off"' resume 'swaymsg "output * power on"'
+    before-sleep 'swaylock -f'
+)
+
+get_mode() {
+    cat "$STATE_FILE" 2>/dev/null || echo "on"
+}
+
+set_mode() {
+    echo "$1" > "$STATE_FILE"
+}
+
+stop_watcher() {
+    # Stop the systemd-managed watcher. Also clean up any legacy bare-bash
+    # watcher that may have been left over from before the unit existed.
+    systemctl --user stop "$WATCHER_SERVICE" 2>/dev/null
+    if [ -f "$WATCHER_PID" ]; then
+        local pid
+        pid=$(cat "$WATCHER_PID")
+        kill "$pid" 2>/dev/null
+        rm -f "$WATCHER_PID"
+    fi
+    rm -f "$CLAUDE_STATE"
+}
+
+start_swayidle() {
+    pkill -x swayidle 2>/dev/null
+    sleep 0.2
+    "${SWAYIDLE_CMD[@]}" &
+    disown
+}
+
+stop_swayidle() {
+    pkill -x swayidle 2>/dev/null
+}
+
+# Check if Claude Code is actively working by sampling CPU time of its
+# process tree over a short interval. When Claude streams a response or
+# runs tools, the node process and its children consume CPU. When idle
+# (waiting for user input), CPU time stays flat.
+is_claude_active() {
+    local pids
+    pids=$(pgrep -f "node.*claude" 2>/dev/null)
+    [ -z "$pids" ] && return 1
+
+    local ticks1=0
+    for pid in $pids; do
+        local t
+        t=$(awk '{print $14+$15}' /proc/"$pid"/stat 2>/dev/null) || continue
+        ticks1=$((ticks1 + t))
+    done
+
+    sleep 2
+
+    local ticks2=0
+    for pid in $pids; do
+        local t
+        t=$(awk '{print $14+$15}' /proc/"$pid"/stat 2>/dev/null) || continue
+        ticks2=$((ticks2 + t))
+    done
+
+    [ "$ticks2" -gt "$ticks1" ]
+}
+
+# Watcher for claude mode: polls every 15 seconds. If Claude is active,
+# ensures swayidle is stopped. If idle for 2 consecutive checks (30s),
+# restarts swayidle. Runs in the foreground — invoked as `idle-toggle
+# run-watcher` from idle-toggle-watcher.service so systemd handles
+# crashes/kills via Restart=on-failure.
+run_watcher() {
+    # Clean exit on SIGTERM/SIGINT so systemd records exit 0 (no restart loop)
+    # and the claude-active flag is removed for waybar.
+    trap 'rm -f "$CLAUDE_STATE"; exit 0' TERM INT
+
+    local idle_count=0
+    local swayidle_running=true
+
+    # Start with swayidle running
+    start_swayidle
+
+    while true; do
+        # Exit if mode changed away from claude
+        [ "$(get_mode)" != "claude" ] && break
+
+        if is_claude_active; then
+            idle_count=0
+            echo "active" > "$CLAUDE_STATE"
+            if $swayidle_running; then
+                stop_swayidle
+                swayidle_running=false
+            fi
+        else
+            idle_count=$((idle_count + 1))
+            echo "idle" > "$CLAUDE_STATE"
+            if ! $swayidle_running && [ "$idle_count" -ge 2 ]; then
+                start_swayidle
+                swayidle_running=true
+            fi
+        fi
+
+        sleep 13  # ~15s total per loop (2s from is_claude_active + 13s sleep)
+    done
+    rm -f "$CLAUDE_STATE"
+}
+
+do_status() {
+    local mode
+    mode=$(get_mode)
+    case "$mode" in
+        on)
+            printf '{"text":"󰌾 ","tooltip":"Screen lock: on\\nClick to cycle","class":"on"}\n'
+            ;;
+        off)
+            printf '{"text":"󰌿 ","tooltip":"Screen lock: disabled\\nClick to cycle","class":"off"}\n'
+            ;;
+        claude)
+            local claude_state
+            claude_state=$(cat "$CLAUDE_STATE" 2>/dev/null)
+            if [ "$claude_state" = "active" ]; then
+                printf '{"text":"󰗚 ","tooltip":"Screen lock: auto (Claude active)\\nClick to cycle","class":"claude-active"}\n'
+            else
+                printf '{"text":"󰒲 ","tooltip":"Screen lock: auto (Claude idle)\\nClick to cycle","class":"claude"}\n'
+            fi
+            ;;
+    esac
+}
+
+do_cycle() {
+    local mode
+    mode=$(get_mode)
+    case "$mode" in
+        on)      do_set off ;;
+        off)     do_set claude ;;
+        claude)  do_set on ;;
+    esac
+}
+
+do_set() {
+    local new_mode="$1"
+
+    # Clean up previous mode
+    stop_watcher
+
+    case "$new_mode" in
+        on)
+            set_mode on
+            start_swayidle
+            notify-send -t 2000 "󰌾 Screen lock enabled"
+            ;;
+        off)
+            set_mode off
+            stop_swayidle
+            notify-send -t 2000 "󰌿 Screen lock disabled"
+            ;;
+        claude)
+            set_mode claude
+            systemctl --user start "$WATCHER_SERVICE"
+            notify-send -t 2000 "󰗚 Screen lock: Claude auto mode"
+            ;;
+    esac
+}
+
+case "${1:-}" in
+    status)       do_status ;;
+    cycle)        do_cycle ;;
+    on)           do_set on ;;
+    off)          do_set off ;;
+    claude)       do_set claude ;;
+    run-watcher)  run_watcher ;;
+    *)
+        echo "Usage: idle-toggle {status|cycle|on|off|claude}"
+        echo "Current mode: $(get_mode)"
+        ;;
+esac

@@ -1,6 +1,6 @@
 # sway-argon-one-up
 
-A complete Sway desktop environment for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system), a 14-inch laptop powered by the Raspberry Pi Compute Module 5. Includes a one-command installer, a 9-theme switcher with matching wallpapers and live terminal recoloring, a dynamic keybinding help overlay, instant brightness control via direct I2C, display scaling controls, battery and power management, and Claude Code integration.
+A complete Sway desktop environment for the [Argon ONE UP CM5 Laptop](https://argon40.com/products/argon-one-up-cm5-laptop-core-system), a 14-inch laptop powered by the Raspberry Pi Compute Module 5. Includes a one-command installer, a 10-theme switcher with matching wallpapers and live terminal recoloring, a dynamic keybinding help overlay, instant brightness control via direct I2C, display scaling controls, battery and power management, and Claude Code integration.
 
 ![screenshot](screenshot.png)
 
@@ -24,7 +24,7 @@ This setup is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produc
 |-----------|-------------|
 | `sway/` | Sway config with themed window colors, idle lock, touchpad, media keys |
 | `waybar/` | Top bar with workspaces, clock, CPU, volume, backlight, Argon battery, tray, theme/scale/Claude/help/power buttons |
-| `sway-themes/` | 9 theme definitions + templates for all themed apps (sway, waybar, foot, mako, swaylock, wofi, wob, Brave, Chromium, Thunar/GTK) |
+| `sway-themes/` | 10 theme definitions + templates for all themed apps (sway, waybar, foot, mako, swaylock, wofi, wob, Brave, Chromium, Thunar/GTK) |
 | `wallpapers/` | Matching wallpaper for each theme (auto-applied on theme switch) |
 | `bin/` | `switch-theme`, `sway-scale`, `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `lid-suspend`, `power-mode`, `power-startup`, `powermenu`, `screen-record`, `argon-battery` |
 | `foot/` | Terminal emulator config with live-recolored theme support |
@@ -41,25 +41,24 @@ This setup is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produc
 
 ## Themes
 
-Switch between 9 themes with **Mod+T** or the waybar palette icon. Every themed app updates simultaneously — sway window borders, waybar, foot terminals, mako notifications, swaylock, wofi, wob, GTK apps (including Thunar folder colors), Brave, Chromium, and the wallpaper.
+Switch between 10 themes with **Mod+T** or the waybar palette icon. Every themed app updates simultaneously — sway window borders, waybar, foot terminals, mako notifications, swaylock, wofi, wob, GTK apps (including Thunar folder colors), Brave, Chromium, and the wallpaper.
 
 <p>
-<img src="screenshots/theme-frappe.png" width="30%" alt="Catppuccin Frappe">
-<img src="screenshots/theme-mocha.png" width="30%" alt="Catppuccin Mocha">
-<img src="screenshots/theme-latte.png" width="30%" alt="Catppuccin Latte">
+<img src="screenshots/theme-frappe.png" width="19%" alt="Catppuccin Frappe">
+<img src="screenshots/theme-mocha.png" width="19%" alt="Catppuccin Mocha">
+<img src="screenshots/theme-latte.png" width="19%" alt="Catppuccin Latte">
+<img src="screenshots/theme-macchiato.png" width="19%" alt="Catppuccin Macchiato">
+<img src="screenshots/theme-dracula.png" width="19%" alt="Dracula">
 </p>
 <p>
-<img src="screenshots/theme-macchiato.png" width="30%" alt="Catppuccin Macchiato">
-<img src="screenshots/theme-dracula.png" width="30%" alt="Dracula">
-<img src="screenshots/theme-nord.png" width="30%" alt="Nord">
-</p>
-<p>
-<img src="screenshots/theme-gruvbox.png" width="30%" alt="Gruvbox Dark">
-<img src="screenshots/theme-monokai-dark.png" width="30%" alt="Monokai Dark">
-<img src="screenshots/theme-monokai-light.png" width="30%" alt="Monokai Light">
+<img src="screenshots/theme-nord.png" width="19%" alt="Nord">
+<img src="screenshots/theme-gruvbox.png" width="19%" alt="Gruvbox Dark">
+<img src="screenshots/theme-monokai-dark.png" width="19%" alt="Monokai Dark">
+<img src="screenshots/theme-monokai-light.png" width="19%" alt="Monokai Light">
+<img src="screenshots/theme-arc-raiders.png" width="19%" alt="Arc Raiders">
 </p>
 
-*Frappe, Mocha, Latte, Macchiato, Dracula, Nord, Gruvbox Dark, Monokai Dark, Monokai Light*
+*Frappe, Mocha, Latte, Macchiato, Dracula, Nord, Gruvbox Dark, Monokai Dark, Monokai Light, Arc Raiders*
 
 ## Documentation
 

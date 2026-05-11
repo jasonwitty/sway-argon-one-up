@@ -200,7 +200,7 @@ sudo apt install -y \
     ukui-polkit \
     ddcutil i2c-tools \
     fish \
-    bat eza fzf zoxide ugrep \
+    bat eza fzf zoxide ugrep jq \
     grim slurp wl-clipboard wf-recorder libnotify-bin \
     xdg-desktop-portal-wlr \
     fonts-firacode \
@@ -349,6 +349,7 @@ else
 fi
 
 # Patch out the stock battery polling thread (replaced by argon-battery-rs)
+# and the stock lid monitor thread (replaced by argon-lid-monitor).
 if [ -f /etc/argon/argononeupd.py ]; then
     if grep -q '^[[:space:]]*t1\.start()' /etc/argon/argononeupd.py; then
         info "Patching Argon daemon: disabling stock battery polling thread..."
@@ -356,6 +357,15 @@ if [ -f /etc/argon/argononeupd.py ]; then
         success "Battery polling thread disabled"
     else
         success "Battery polling thread already patched"
+    fi
+
+    if grep -q '^[[:space:]]*t2\.start()' /etc/argon/argononeupd.py; then
+        info "Patching Argon daemon: disabling stock lid monitor thread..."
+        sudo sed -i 's/^[[:space:]]*t2 = Thread(target = argonpowerbutton_monitorlid.*$/#&/' /etc/argon/argononeupd.py
+        sudo sed -i 's/^[[:space:]]*t2\.start()/#&/' /etc/argon/argononeupd.py
+        success "Lid monitor thread disabled"
+    else
+        success "Lid monitor thread already patched"
     fi
 else
     warn "Argon daemon script not found at /etc/argon/argononeupd.py — skipping patch"
@@ -386,7 +396,7 @@ if [ -d "$REPO_DIR" ]; then
     rm -rf "$REPO_DIR"
 fi
 info "Cloning sway-argon-one-up..."
-git clone "$REPO_URL" "$REPO_DIR"
+git clone --depth=1 "$REPO_URL" "$REPO_DIR"
 
 cd "$REPO_DIR"
 
@@ -394,7 +404,7 @@ info "Copying config files..."
 
 # Sway and desktop configs
 mkdir -p ~/.config
-cp -r sway waybar wob wofi foot mako swaylock gtk-3.0 sway-themes fish ~/.config/
+cp -r sway waybar wob wofi foot mako swaylock gtk-3.0 sway-themes fish wireplumber ~/.config/
 cp starship.toml ~/.config/
 cp mimeapps.list ~/.config/
 
@@ -406,6 +416,17 @@ mkdir -p ~/.local/bin
 cp bin/* ~/.local/bin/
 chmod +x ~/.local/bin/*
 
+# Systemd user units that aren't tied to a specific Rust crate
+mkdir -p "$HOME/.config/systemd/user"
+if compgen -G "systemd/*.service" > /dev/null; then
+    cp systemd/*.service "$HOME/.config/systemd/user/"
+fi
+
+# mpv config — Pi 5 needs OpenGL via wayland-egl and the fast profile;
+# default Vulkan path crashes on fullscreen toggle.
+mkdir -p "$HOME/.config/mpv"
+cp mpv/mpv.conf "$HOME/.config/mpv/mpv.conf"
+
 # GTK themes
 mkdir -p ~/.themes
 cp -r gtk-themes/* ~/.themes/
@@ -416,9 +437,9 @@ sudo cp greetd/config.toml greetd/sway-config greetd/gtkgreet.css greetd/wallpap
 success "Config files copied"
 
 # ---------------------------------------------------------------------------
-# Phase 9: Build argon-battery-rs and argon-fan
+# Phase 9: Build Rust daemons
 # ---------------------------------------------------------------------------
-phase "Phase 9: Build argon-battery-rs and argon-fan"
+phase "Phase 9: Build Rust daemons"
 
 if [ -x /usr/local/bin/argon-battery-rs ]; then
     success "argon-battery-rs already installed"
@@ -426,8 +447,28 @@ else
     info "Building argon-battery-rs (this may take a few minutes)..."
     cd "$REPO_DIR/argon-battery-rs"
     cargo build --release
-    sudo cp target/release/argon-battery-rs /usr/local/bin/
+    sudo install -m 755 target/release/argon-battery-rs /usr/local/bin/argon-battery-rs
     success "argon-battery-rs built and installed"
+fi
+
+if [ -x /usr/local/bin/argon-lid-monitor ]; then
+    success "argon-lid-monitor already installed"
+else
+    info "Building argon-lid-monitor..."
+    cd "$REPO_DIR/argon-lid-monitor"
+    cargo build --release
+    sudo install -m 755 target/release/argon-lid-monitor /usr/local/bin/argon-lid-monitor
+    success "argon-lid-monitor built and installed"
+fi
+
+if [ -x /usr/local/bin/trackpad-guard ]; then
+    success "trackpad-guard already installed"
+else
+    info "Building trackpad-guard..."
+    cd "$REPO_DIR/trackpad-guard"
+    cargo build --release
+    sudo install -m 755 target/release/trackpad-guard /usr/local/bin/trackpad-guard
+    success "trackpad-guard built and installed"
 fi
 
 if [ -x /usr/local/bin/argon-fan ]; then
@@ -439,6 +480,50 @@ else
     sudo install -m 0755 target/release/argon-fan /usr/local/bin/argon-fan
     success "argon-fan built and installed"
 fi
+
+# Upgrade path: remove the old Python trackpad-guard and its exec line from sway.
+if [ -f "$HOME/.local/bin/trackpad-guard" ] && head -1 "$HOME/.local/bin/trackpad-guard" | grep -q python; then
+    info "Removing old Python trackpad-guard (replaced by Rust version)..."
+    rm -f "$HOME/.local/bin/trackpad-guard"
+fi
+
+# User must be in the gpio group to access /dev/gpiochip0 from argon-lid-monitor
+if ! groups | grep -qw gpio; then
+    info "Adding $USER to the gpio group (needed by argon-lid-monitor)..."
+    sudo usermod -aG gpio "$USER"
+    warn "gpio group membership takes effect after next login"
+fi
+
+# Install and enable the argon-lid-monitor user service
+info "Installing argon-lid-monitor systemd user unit..."
+mkdir -p "$HOME/.config/systemd/user"
+cp "$REPO_DIR/argon-lid-monitor/systemd/argon-lid-monitor.service" "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+systemctl --user enable argon-lid-monitor.service
+# Only start if sway session is up; otherwise it will start at next login
+if systemctl --user is-active --quiet graphical-session.target 2>/dev/null; then
+    systemctl --user start argon-lid-monitor.service
+fi
+success "argon-lid-monitor user service installed and enabled"
+
+# Install and enable the trackpad-guard user service
+info "Installing trackpad-guard systemd user unit..."
+cp "$REPO_DIR/trackpad-guard/systemd/trackpad-guard.service" "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+systemctl --user enable trackpad-guard.service
+if systemctl --user is-active --quiet graphical-session.target 2>/dev/null; then
+    systemctl --user start trackpad-guard.service
+fi
+success "trackpad-guard user service installed and enabled"
+
+# With argon-battery-rs owning battery polling + CW2217 self-heal, and
+# argon-lid-monitor owning lid events, Argon's Python daemons have nothing
+# left to do. Sway handles media/brightness/power keys natively, so the
+# user daemon (argonkeyboard.py) is also redundant. Disable both.
+info "Disabling Argon's Python daemons (replaced by Rust + sway)..."
+sudo systemctl disable --now argononeupd.service 2>/dev/null || true
+systemctl --user disable --now argononeupduser.service 2>/dev/null || true
+success "Argon Python daemons disabled"
 
 # ---------------------------------------------------------------------------
 # Phase 10: System configuration

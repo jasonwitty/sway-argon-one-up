@@ -1,0 +1,42 @@
+# Arc Raiders — Cassette Futurism / NASA-punk
+# Vibrant neon palette derived from the wallpaper rainbow stripes
+THEME_NAME="Arc Raiders"
+FLAVOR="arc-raiders"
+COLOR_SCHEME="prefer-dark"
+GTK_THEME="ArcRaiders"
+ICON_THEME="Papirus-Dark"
+FOLDER_COLOR="teal"
+WALLPAPER="$HOME/.wallpapers/arc-raiders.jpg"
+BROWSER_COLOR="1d1d23"
+
+# Vibrant neon accents — match the wallpaper stripe brightness
+ROSEWATER="f0d8a8"
+FLAMINGO="f06070"
+PINK="e040c8"
+MAUVE="e040c8"
+RED="f02030"
+MAROON="c83030"
+PEACH="f0a830"
+YELLOW="f0c050"
+GREEN="3de265"
+TEAL="3de2c8"
+SKY="3dc9ff"
+SAPPHIRE="3da8e0"
+BLUE="00d8e8"
+LAVENDER="a9b8e8"
+
+# Cream-beige text scale (from Arc Raiders style guide)
+TEXT="eae0cd"
+SUBTEXT1="c4baa8"
+SUBTEXT0="9e9585"
+OVERLAY2="807a6e"
+OVERLAY1="6a6458"
+OVERLAY0="545042"
+
+# Dark grungy charcoal backgrounds (matches wallpaper bg)
+SURFACE2="434355"
+SURFACE1="343442"
+SURFACE0="272732"
+BASE="1d1d23"
+MANTLE="17171c"
+CRUST="111115"

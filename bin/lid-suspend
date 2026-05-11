@@ -55,8 +55,17 @@ case "$1" in
         swaymsg "output * power on"
         log "display: on"
 
-        echo ondemand | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
-        log "cpu governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
+        # Pick governor based on AC state so we don't clobber what
+        # argon-battery-rs would set. CW2217 register 0x0E high byte:
+        # bit 7 set = discharging (battery), clear = charging (AC).
+        # Defaults to ondemand if the read fails.
+        governor="ondemand"
+        current_high=$(i2cget -y 1 0x64 0x0e 2>/dev/null)
+        if [ -n "$current_high" ] && (( (current_high & 0x80) != 0 )); then
+            governor="powersave"
+        fi
+        echo "$governor" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
+        log "cpu governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor) (ac_reg=${current_high:-?})"
 
         sudo rfkill unblock wifi
         sudo rfkill unblock bluetooth

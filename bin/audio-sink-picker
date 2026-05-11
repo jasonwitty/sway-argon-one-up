@@ -1,0 +1,86 @@
+#!/bin/bash
+# audio-sink-picker — wofi chooser for the default audio sink (or source).
+# Bound to right-click on the waybar pulseaudio module.
+#
+# Uses pw-dump + jq + wpctl from the pipewire/wireplumber stack (no pactl
+# dependency — pipewire-pulse doesn't ship it). Existing streams follow
+# the new default because wireplumber's linking.follow-default-target is
+# true by default, plus wpctl set-default targets both the default.audio
+# and default.configured.audio metadata keys.
+
+set -euo pipefail
+
+MODE="${1:-sinks}"   # sinks (default) | sources
+
+case "$MODE" in
+    sinks)
+        prompt="Audio output"
+        class="Audio/Sink"
+        default_key="default.audio.sink"
+        ;;
+    sources)
+        prompt="Audio input"
+        class="Audio/Source"
+        default_key="default.audio.source"
+        ;;
+    *) echo "Usage: $0 [sinks|sources]" >&2; exit 1 ;;
+esac
+
+dump=$(pw-dump 2>/dev/null)
+if [ -z "$dump" ]; then
+    notify-send -a audio "Audio" "pipewire not responding"
+    exit 1
+fi
+
+# Find the node.name the default-nodes metadata currently points at.
+current_name=$(printf '%s' "$dump" | jq -r --arg k "$default_key" '
+    .[]
+    | select(.type == "PipeWire:Interface:Metadata")
+    | select(.props."metadata.name" == "default")
+    | .metadata[]?
+    | select(.key == $k)
+    | .value.name' 2>/dev/null | head -1)
+
+# Collect candidate nodes: id, node.name, description.
+# TAB-separated so labels with spaces survive.
+mapfile -t rows < <(printf '%s' "$dump" | jq -r --arg class "$class" '
+    .[]
+    | select(.type == "PipeWire:Interface:Node")
+    | select(.info.props."media.class" == $class)
+    | [ .id,
+        .info.props."node.name",
+        (.info.props."node.description" // .info.props."node.nick" // .info.props."node.name")
+      ]
+    | @tsv')
+
+if [ "${#rows[@]}" -eq 0 ]; then
+    notify-send -a audio "Audio" "No ${MODE} available"
+    exit 1
+fi
+
+# Build: label \t id \t node.name — mark the current default with ●.
+entries=""
+for row in "${rows[@]}"; do
+    IFS=$'\t' read -r id name desc <<< "$row"
+    [ -z "$desc" ] && desc="$name"
+    marker=""
+    [ "$name" = "$current_name" ] && marker="  ●"
+    entries+="${desc}${marker}"$'\t'"${id}"$'\t'"${name}"$'\n'
+done
+
+choice=$(printf '%s' "$entries" | cut -f1 | \
+    wofi --dmenu --prompt "$prompt" --width 460 --height 320 || true)
+[ -z "$choice" ] && exit 0
+
+chosen_id=$(printf '%s' "$entries" | awk -F'\t' -v c="$choice" '$1 == c { print $2; exit }')
+if [ -z "$chosen_id" ]; then
+    notify-send -a audio "Audio" "Selection not found"
+    exit 1
+fi
+
+if wpctl set-default "$chosen_id" 2>/dev/null; then
+    notify-send -a audio "Audio" "Switched to ${choice%  ●}"
+else
+    notify-send -a audio "Audio" "Failed to set default (id $chosen_id)"
+    exit 1
+fi

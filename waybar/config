@@ -8,9 +8,11 @@
     "clock"
   ],
   "modules-right": [
+    "custom/recording",
     "custom/claude",
     "custom/help",
     "custom/theme",
+    "custom/idle",
     "custom/scale",
     "cpu",
     "custom/argon-fan",
@@ -29,14 +31,25 @@
   "pulseaudio": {
     "format": "{icon} {volume}%",
     "format-muted": "󰝟 muted",
+    "format-bluetooth": "󰂰 {volume}%",
+    "format-bluetooth-muted": "󰂲 muted",
     "format-icons": {
+      "headphone": "󰋋",
+      "hands-free": "󰂑",
+      "headset": "󰋎",
+      "phone": "",
+      "portable": "",
+      "car": "",
       "default": [
         "󰕿",
         "󰖀",
         "󰕾"
       ]
     },
-    "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+    "tooltip": true,
+    "tooltip-format": "{desc} — {volume}%\nRight-click: choose output",
+    "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+    "on-click-right": "audio-sink-picker"
   },
   "network": {
     "format-wifi": "󰤨 {essid}",
@@ -90,8 +103,10 @@
     "on-click-right": "/usr/local/bin/argon-fan edit-config"
   },
   "custom/theme": {
-    "format": "󰏘 ",
-    "tooltip": false,
+    "exec": "~/.local/bin/switch-theme --waybar-status",
+    "return-type": "json",
+    "interval": 1,
+    "tooltip": true,
     "on-click": "swaymsg exec ~/.local/bin/switch-theme\\ --picker"
   },
   "custom/scale": {
@@ -100,6 +115,19 @@
     "format": "󰍉 {}",
     "tooltip": false,
     "on-click": "swaymsg exec ~/.local/bin/sway-scale\\ picker"
+  },
+  "custom/idle": {
+    "exec": "~/.local/bin/idle-toggle status",
+    "return-type": "json",
+    "interval": 5,
+    "tooltip": true,
+    "on-click": "~/.local/bin/idle-toggle cycle"
+  },
+  "custom/recording": {
+    "exec": "~/.local/bin/screen-record status",
+    "return-type": "json",
+    "interval": 1,
+    "tooltip": true
   },
   "custom/power": {
     "format": "⏻",

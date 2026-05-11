@@ -30,17 +30,23 @@ output * scale 1.6
 ### Set brightness and power profile based on AC/battery state
 exec ~/.local/bin/power-startup
 
-### Idle configuration
-exec swayidle -w \
-    timeout 300 'swaylock -f' \
-    timeout 600 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' \
-    before-sleep 'swaylock -f'
+### Disable touchpad while typing (DWT workaround for USB combo device)
+
+### Idle configuration (managed by idle-toggle, starts in "on" mode)
+exec ~/.local/bin/idle-toggle on
 
 ### Input configuration
 input type:touchpad {
     tap enabled
     natural_scroll enabled
-    dwt enabled
+    # libinput's disable-while-typing is intentionally OFF here — the AMIRA
+    # exposes keyboard and touchpad on different USB interfaces (different
+    # vid:pid), so libinput can't correlate them and its DWT was getting
+    # stuck (touchpad would stop responding, sometimes for many minutes).
+    # The Rust trackpad-guard daemon handles this correctly by watching
+    # AMIRA evdev events directly.
+    dwt disabled
+    dwtp disabled
 }
 
 ### Wob (overlay bar for brightness/volume)
@@ -217,15 +223,23 @@ bindsym $mod+r mode "resize"
     bindsym --locked XF86MonBrightnessUp exec ~/.local/bin/brightness up
     # Argon battery dashboard
     bindsym Pause exec foot -e sudo /usr/bin/python3 /etc/argon/argondashboard.py
-    # Screenshots
+    # Screenshots & screen recording
+    # Print       — full-screen screenshot saved to file (grim default)
+    # Mod+Print   — area screenshot to clipboard
+    # Mod+X       — toggle screen recording (full screen, via ~/.local/bin/screen-record)
     bindsym Print exec grim
     bindsym $mod+Print exec grim -g "$(slurp)" - | wl-copy
-    bindsym $mod+Shift+s exec grim -g "$(slurp)" - | wl-copy
+    bindsym $mod+x exec ~/.local/bin/screen-record
     # Claude
     bindsym $mod+c exec foot -e claude
     bindsym $mod+Shift+c exec ~/.local/bin/claude-prompt
     # Theme switcher
     bindsym $mod+t exec ~/.local/bin/switch-theme --picker
+    # Manual trackpad rescue: if the AMIRA touchpad becomes unresponsive,
+    # this signals trackpad-guard to do a USB unbind+rebind on the
+    # touchpad-paired interface (vid:pid 6080:8061). The daemon also has
+    # an automatic heuristic, but the manual trigger is faster.
+    bindsym $mod+Shift+t exec pkill -USR1 -f /usr/local/bin/trackpad-guard
     # Help overlay
     bindsym $mod+Shift+h exec ~/.local/bin/sway-help
     # Brave browser

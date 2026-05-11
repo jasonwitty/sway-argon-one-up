@@ -1,0 +1,12 @@
+[Unit]
+Description=Argon ONE UP lid monitor (Rust)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/argon-lid-monitor
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=default.target

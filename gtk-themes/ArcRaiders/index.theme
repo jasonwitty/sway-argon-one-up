@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=ArcRaiders
+Comment=Cassette futurism dark theme inspired by Arc Raiders. Derived from the Ant GTK theme by EliverLara (https://github.com/EliverLara/Ant), licensed under GPL-3.0. See LICENSE.
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=ArcRaiders
+MetacityTheme=ArcRaiders
+IconTheme=Papirus-Dark
+ButtonLayout=:minimize,maximize,close

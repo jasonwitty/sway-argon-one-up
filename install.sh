@@ -561,6 +561,7 @@ fi
 
 # .desktop file so any DE / launcher can list and start it
 info "Installing system-dashboard .desktop entry..."
+sudo mkdir -p /usr/local/share/applications
 sudo install -m 0644 "$REPO_DIR/system-dashboard/system-dashboard.desktop" \
     /usr/local/share/applications/system-dashboard.desktop
 success ".desktop entry installed"

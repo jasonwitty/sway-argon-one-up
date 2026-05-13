@@ -108,13 +108,24 @@ fn spawn_keyboard_reader(mut device: Device, tx: mpsc::Sender<Msg>) {
         match device.fetch_events() {
             Ok(events) => {
                 let at = Instant::now();
-                let mut had_key = false;
+                let mut had_transition = false;
                 for ev in events {
-                    if matches!(ev.destructure(), EventSummary::Key(..)) {
-                        had_key = true;
+                    if let EventSummary::Key(_, _, value) = ev.destructure() {
+                        // Only real presses (value=1) and releases
+                        // (value=0) count as "typing." Autorepeat
+                        // (value=2) is *deliberately* ignored: the
+                        // AMIRA drops release events often enough that
+                        // counting autorepeats as activity would let a
+                        // single missed release lock the touchpad off
+                        // forever — the kernel keeps autorepeating
+                        // until we get a fresh release. This matches
+                        // the original Rust port's design.
+                        if value == 0 || value == 1 {
+                            had_transition = true;
+                        }
                     }
                 }
-                if had_key && tx.send(Msg::KeyActivity { at }).is_err() {
+                if had_transition && tx.send(Msg::KeyActivity { at }).is_err() {
                     return;
                 }
             }

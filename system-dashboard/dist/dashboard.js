@@ -71,6 +71,7 @@ async function refresh() {
     renderFan(s.fan);
     renderBrightness(s.brightness);
     renderVolume(s.volume);
+    renderTrackpad(s.trackpad);
   } catch (e) {
     console.error("snapshot failed", e);
   }
@@ -259,6 +260,22 @@ function renderVolume(v) {
         : "\u{F057E}"; // volume-high
 }
 
+function renderTrackpad(t) {
+  const card = document.getElementById("card-trackpad");
+  const sw = document.getElementById("trackpad-switch");
+  const value = document.getElementById("trackpad-value");
+  const sub = document.getElementById("trackpad-sub");
+  card.classList.toggle("on", t.active);
+  card.classList.toggle("off", !t.active);
+  // Don't fight the user mid-toggle — if they just clicked the switch, the
+  // optimistic state is reflected in `dataset.pending` until the next poll.
+  if (sw.dataset.pending !== "1") sw.checked = t.active;
+  value.textContent = t.active ? "On" : "Off";
+  sub.textContent = t.active
+    ? "Disabling touchpad while typing"
+    : "Always-on touchpad (no DWT)";
+}
+
 // While the user is dragging the slider, don't fight them by overwriting
 // the value from the poll loop.
 function sliderIsBeingDragged(slider) {
@@ -309,6 +326,25 @@ document.querySelectorAll(".clickable").forEach((card) => {
 
 bindSlider("brightness-slider", "set_brightness");
 bindSlider("volume-slider", "set_volume");
+
+(function bindTrackpadSwitch() {
+  const sw = document.getElementById("trackpad-switch");
+  sw.addEventListener("change", () => {
+    sw.dataset.pending = "1";
+    invoke("toggle_trackpad_guard")
+      .catch((e) => {
+        console.error("toggle_trackpad_guard failed", e);
+        sw.checked = !sw.checked; // revert
+      })
+      .finally(() => {
+        // Re-sync from backend shortly after; systemd takes ~100-300ms.
+        setTimeout(() => {
+          sw.dataset.pending = "0";
+          refresh();
+        }, 400);
+      });
+  });
+})();
 
 // Register the theme-change listener but don't block startup on it.
 listen("theme-stylesheet-changed", refresh).catch((e) =>

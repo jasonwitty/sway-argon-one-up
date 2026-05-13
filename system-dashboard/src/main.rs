@@ -12,6 +12,7 @@ mod fan;
 mod idle;
 mod power;
 mod theme;
+mod trackpad;
 mod volume;
 
 use serde::Serialize;
@@ -27,6 +28,7 @@ struct Snapshot {
     fan: fan::FanState,
     brightness: brightness::BrightnessState,
     volume: volume::VolumeState,
+    trackpad: trackpad::TrackpadGuardState,
 }
 
 #[tauri::command]
@@ -41,6 +43,7 @@ fn snapshot() -> Snapshot {
         fan: fan::read(),
         brightness: brightness::read(),
         volume: volume::read(),
+        trackpad: trackpad::read(),
     }
 }
 
@@ -72,6 +75,11 @@ fn open_theme_picker() -> Result<(), String> {
 #[tauri::command]
 fn open_fan_picker() -> Result<(), String> {
     run_detached("argon-fan", &["picker"])
+}
+
+#[tauri::command]
+fn toggle_trackpad_guard() -> Result<(), String> {
+    trackpad::toggle()
 }
 
 /// Detect whether we're running under a tiling window manager. Used to
@@ -146,6 +154,7 @@ fn main() {
             cycle_idle,
             open_theme_picker,
             open_fan_picker,
+            toggle_trackpad_guard,
             set_brightness,
             set_volume
         ])

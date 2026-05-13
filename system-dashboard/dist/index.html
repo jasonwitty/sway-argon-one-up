@@ -79,6 +79,19 @@
       <input class="slider" type="range" id="volume-slider"
              min="0" max="100" step="1" value="50" />
     </section>
+
+    <section class="card trackpad" id="card-trackpad">
+      <div class="row">
+        <span class="icon">󰌌</span>
+        <span class="label">Trackpad guard</span>
+        <span class="value" id="trackpad-value">—</span>
+        <label class="switch" title="Toggle disable-while-typing">
+          <input type="checkbox" id="trackpad-switch" />
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="sub" id="trackpad-sub">reading…</div>
+    </section>
   </main>
 
   <script type="module" src="dashboard.js"></script>

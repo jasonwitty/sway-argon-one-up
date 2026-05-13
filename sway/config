@@ -27,6 +27,13 @@ set $gnome-schema org.gnome.desktop.interface
 ### Output configuration
 output * scale 1.6
 
+### Push sway/wayland env into systemd user manager and dbus activation env
+# Required so user services (trackpad-guard, etc.) can talk to sway via swaymsg.
+# Without this, SWAYSOCK/WAYLAND_DISPLAY are unset for systemd-launched units
+# and every swaymsg call fails with exit status 1.
+exec systemctl --user import-environment SWAYSOCK WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+exec dbus-update-activation-environment --systemd SWAYSOCK WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+
 ### Set brightness and power profile based on AC/battery state
 exec ~/.local/bin/power-startup
 

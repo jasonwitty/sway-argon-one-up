@@ -195,7 +195,7 @@ sudo apt install -y \
     sway swaybg swayidle swaylock xwayland \
     waybar wofi foot wob mako-notifier \
     greetd gtkgreet \
-    seatd pipewire wireplumber \
+    seatd pipewire wireplumber libspa-0.2-bluetooth libspa-0.2-libcamera \
     network-manager network-manager-gnome \
     ukui-polkit \
     ddcutil i2c-tools \

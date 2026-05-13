@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "System Dashboard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "ai.sway.system-dashboard",
   "build": {
     "frontendDist": "dist"
@@ -13,9 +13,9 @@
         "title": "System",
         "label": "main",
         "width": 420,
-        "height": 700,
+        "height": 690,
         "minWidth": 380,
-        "minHeight": 620,
+        "minHeight": 600,
         "resizable": true,
         "decorations": true,
         "fullscreen": false,

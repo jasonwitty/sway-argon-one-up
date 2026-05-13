@@ -1,89 +1,80 @@
-//! Disable sway touchpad while typing.
+//! Disable sway touchpad while typing — evdev intercept (v4).
 //!
-//! Works around DWT (disable-while-typing) not functioning on USB combo
-//! keyboard/touchpad devices like the AMIRA in the Argon ONE UP case.
-//! Watches all matching keyboard evdev nodes (the AMIRA exposes the same
-//! vid:pid on two USB interfaces) and disables `type:touchpad` via swaymsg
-//! while any non-modifier keys are pressed, re-enabling 100ms after they
-//! are all released.
+//! Architecture: trackpad-guard sits between the real AMIRA touchpad
+//! and libinput. We do NOT use `swaymsg ... events disabled` anymore,
+//! because that flow killed in-progress touches in libinput's view and
+//! forced the user to lift+retouch to recover.
 //!
-//! Modifier-only holds (Super/Shift/Ctrl/Alt) do not disable the touchpad.
-//! Workspace-switch chords like Mod+digit involve a non-modifier press, so
-//! they still disable briefly, then re-enable cleanly when the digit is
-//! released regardless of whether Mod-release is delivered.
+//! Instead:
+//! 1. A udev rule tags the AMIRA touchpad evdev nodes with
+//!    LIBINPUT_IGNORE_DEVICE=1 so libinput refuses to open them.
+//! 2. We open + EVIOCGRAB the real touchpad nodes ourselves.
+//! 3. We create a virtual uinput device that mirrors the real touchpad's
+//!    capabilities (vid:pid, keys, relative axes, properties).
+//! 4. Each event batch from the real touchpad is forwarded byte-for-byte
+//!    to the virtual device — UNLESS a keyboard event has been seen in
+//!    the last KEY_TYPING_WINDOW (150 ms), in which case the batch is
+//!    silently dropped.
 //!
-//! Autorepeat events (value=2) do not update timers, so a dropped release
-//! event will be detected via the 2s stuck-state safety net and the
-//! touchpad will be re-enabled.
+//! From sway/libinput's perspective there's only the virtual device,
+//! and it never changes state — no send_events toggles, no
+//! "touch cancelled" events. So mid-typing brushes on the trackpad
+//! simply do nothing; the moment typing stops, the next motion event
+//! flows through naturally.
 //!
-//! SIGUSR1 triggers a manual USB unbind/rebind on the AMIRA touchpad
-//! interface (vid:pid 6080:8061). This is the user-explicit recovery if
-//! the device ever appears stuck at the kernel level (sway shows it as
-//! enabled but the cursor doesn't move). Sway is wired to send SIGUSR1 on
-//! Mod+Shift+T.
-//!
-//! There is intentionally no auto-rebind heuristic — earlier versions
-//! tried to detect stuck touchpads by watching for "keyboard active but
-//! touchpad evdev silent for N seconds." That fired on false positives
-//! (user just typing without using the trackpad), and the unnecessary
-//! USB rebinds occasionally left the device in a bad state, *creating*
-//! the stuck-trackpad symptom they were meant to recover from.
+//! SIGUSR1 still triggers a manual USB unbind/rebind on the AMIRA
+//! touchpad interface (vid:pid 6080:8061), bound to Mod+Shift+T.
 
-use evdev::{Device, EventSummary, KeyCode};
+use evdev::{uinput::VirtualDevice, Device, EventSummary, InputEvent, UinputAbsSetup};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM, SIGUSR1};
 use signal_hook::iterator::Signals;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 const VENDOR_ID: u16 = 0x6080;
 const KEYBOARD_NAME: &str = "AMIRA-KEYBOAR USB KEYBOARD";
-// USB product ID of the AMIRA interface that the touchpad lives behind —
-// used by the SIGUSR1-driven manual rebind path.
+/// The AMIRA's mouse-class evdev node has one of these names depending on
+/// which kernel HID driver is bound to the interface (hid-generic vs
+/// hid-multitouch). We open whichever appears.
+const TOUCHPAD_NAMES: &[&str] = &[
+    "AMIRA-KEYBOAR USB KEYBOARD Touchpad",
+    "AMIRA-KEYBOAR USB KEYBOARD Mouse",
+];
+/// Name we give the virtual replacement device. Deliberately distinct
+/// from the real names so the LIBINPUT_IGNORE_DEVICE udev rule (which
+/// matches the real names) doesn't apply to our virtual.
+const VIRTUAL_NAME: &str = "trackpad-guard AMIRA touchpad";
+
+/// USB ids used by the SIGUSR1-driven manual rebind path.
 const TOUCHPAD_USB_PRODUCT: &str = "8061";
-const TOUCHPAD_USB_VENDOR: &str = "6080";
-// Note: the AMIRA exposes two USB interfaces with different PIDs (0x8060
-// and 0x8061). We match keyboards on vendor + exact name so we catch
-// both — name equality still excludes the Mouse/Touchpad/System Control/
-// Consumer Control/Wireless Radio Control subsystem nodes that share the
-// vid.
+const TOUCHPAD_USB_VENDOR_STR: &str = "6080";
 
-/// Grace window after the last key release before re-enabling the touchpad.
-const GRACE: Duration = Duration::from_millis(100);
+/// Touchpad events arriving within this window of the most recent
+/// keyboard event are dropped (typing → palm protection).
+const KEY_TYPING_WINDOW: Duration = Duration::from_millis(150);
 
-/// Keys we track in the pressed set but which never on their own disable
-/// the touchpad. Holding Super to switch workspaces, Shift to select, Ctrl
-/// for a shortcut, etc. isn't "typing" — no palm rest to guard against —
-/// and the AMIRA drops release events on modifiers frequently enough that
-/// treating modifier-only holds as typing locks the touchpad out for the
-/// full STUCK_TIMEOUT every time a modifier press is mishandled.
-fn is_modifier(key: KeyCode) -> bool {
-    matches!(
-        key,
-        KeyCode::KEY_LEFTCTRL
-            | KeyCode::KEY_RIGHTCTRL
-            | KeyCode::KEY_LEFTSHIFT
-            | KeyCode::KEY_RIGHTSHIFT
-            | KeyCode::KEY_LEFTALT
-            | KeyCode::KEY_RIGHTALT
-            | KeyCode::KEY_LEFTMETA
-            | KeyCode::KEY_RIGHTMETA
-    )
-}
-
-/// If any key is marked pressed but no events at all have arrived for this
-/// long, assume a release was dropped and force-clear state.
-const STUCK_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// Retry interval when no matching keyboards are found at startup.
 const DISCOVER_INTERVAL: Duration = Duration::from_secs(2);
 
 enum Msg {
-    KeyEvent { key: KeyCode, value: i32 },
+    /// A keyboard event batch arrived. The timestamp is captured in the
+    /// reader thread the moment fetch_events() returns, so it reflects
+    /// when the kernel emitted the event — NOT when the main loop gets
+    /// around to processing the message. Using processing time would
+    /// drift under load: a backlog can make us think a stale keystroke
+    /// happened "now" and incorrectly gate touchpad events that are
+    /// actually well past the typing window.
+    KeyActivity { at: Instant },
+    TouchpadEvents {
+        events: Vec<InputEvent>,
+        at: Instant,
+    },
     KeyboardReaderDied,
+    TouchpadReaderDied,
     ManualRebind,
     Shutdown,
 }
@@ -92,9 +83,23 @@ fn matches_keyboard(device: &Device) -> bool {
     device.input_id().vendor() == VENDOR_ID && device.name() == Some(KEYBOARD_NAME)
 }
 
-fn find_keyboards() -> Vec<(std::path::PathBuf, Device)> {
+fn matches_touchpad(device: &Device) -> bool {
+    if device.input_id().vendor() != VENDOR_ID {
+        return false;
+    }
+    let Some(name) = device.name() else { return false };
+    TOUCHPAD_NAMES.contains(&name)
+}
+
+fn find_keyboards() -> Vec<(PathBuf, Device)> {
     evdev::enumerate()
         .filter(|(_, d)| matches_keyboard(d))
+        .collect()
+}
+
+fn find_touchpads() -> Vec<(PathBuf, Device)> {
+    evdev::enumerate()
+        .filter(|(_, d)| matches_touchpad(d))
         .collect()
 }
 
@@ -102,12 +107,15 @@ fn spawn_keyboard_reader(mut device: Device, tx: mpsc::Sender<Msg>) {
     thread::spawn(move || loop {
         match device.fetch_events() {
             Ok(events) => {
+                let at = Instant::now();
+                let mut had_key = false;
                 for ev in events {
-                    if let EventSummary::Key(_, key, value) = ev.destructure() {
-                        if tx.send(Msg::KeyEvent { key, value }).is_err() {
-                            return;
-                        }
+                    if matches!(ev.destructure(), EventSummary::Key(..)) {
+                        had_key = true;
                     }
+                }
+                if had_key && tx.send(Msg::KeyActivity { at }).is_err() {
+                    return;
                 }
             }
             Err(_) => {
@@ -118,7 +126,60 @@ fn spawn_keyboard_reader(mut device: Device, tx: mpsc::Sender<Msg>) {
     });
 }
 
-/// Find the AMIRA touchpad's USB device id (e.g. "1-1.6") by vid:pid.
+fn spawn_touchpad_reader(mut device: Device, tx: mpsc::Sender<Msg>) {
+    thread::spawn(move || loop {
+        match device.fetch_events() {
+            Ok(events) => {
+                let at = Instant::now();
+                let batch: Vec<InputEvent> = events.collect();
+                if !batch.is_empty()
+                    && tx
+                        .send(Msg::TouchpadEvents { events: batch, at })
+                        .is_err()
+                {
+                    return;
+                }
+            }
+            Err(_) => {
+                let _ = tx.send(Msg::TouchpadReaderDied);
+                return;
+            }
+        }
+    });
+}
+
+/// Build a uinput virtual device that mirrors the capabilities of the
+/// given real device. Sway/libinput will discover this and treat it as
+/// the actual touchpad (the real one is hidden via LIBINPUT_IGNORE_DEVICE).
+fn create_virtual_touchpad(real: &Device) -> std::io::Result<VirtualDevice> {
+    let mut builder = VirtualDevice::builder()?
+        .name(VIRTUAL_NAME)
+        .input_id(real.input_id());
+
+    if let Some(keys) = real.supported_keys() {
+        builder = builder.with_keys(keys)?;
+    }
+    if let Some(rel) = real.supported_relative_axes() {
+        builder = builder.with_relative_axes(rel)?;
+    }
+    // Mirror absolute axes one-by-one — libinput needs the ABS_X/ABS_Y +
+    // resolution info to classify the device as a touchpad rather than a
+    // plain mouse, and to compute pointer acceleration correctly.
+    if let Ok(absinfo_iter) = real.get_absinfo() {
+        for (code, info) in absinfo_iter {
+            builder = builder.with_absolute_axis(&UinputAbsSetup::new(code, info))?;
+        }
+    }
+    if let Some(msc) = real.misc_properties() {
+        builder = builder.with_msc(msc)?;
+    }
+    let props = real.properties();
+    if props.iter().next().is_some() {
+        builder = builder.with_properties(props)?;
+    }
+    builder.build()
+}
+
 fn find_touchpad_usb_id() -> Option<String> {
     for entry in std::fs::read_dir("/sys/bus/usb/devices/").ok()?.flatten() {
         let path = entry.path();
@@ -128,7 +189,7 @@ fn find_touchpad_usb_id() -> Option<String> {
         let product = std::fs::read_to_string(path.join("idProduct"))
             .ok()
             .map(|s| s.trim().to_string());
-        if vendor.as_deref() == Some(TOUCHPAD_USB_VENDOR)
+        if vendor.as_deref() == Some(TOUCHPAD_USB_VENDOR_STR)
             && product.as_deref() == Some(TOUCHPAD_USB_PRODUCT)
         {
             return Some(entry.file_name().to_string_lossy().into_owned());
@@ -137,10 +198,6 @@ fn find_touchpad_usb_id() -> Option<String> {
     None
 }
 
-/// USB unbind+rebind on the AMIRA touchpad-paired interface. Recovers the
-/// "kernel evdev silent while sysfs reports active" state we keep hitting.
-/// Requires a sudoers entry for `tee` on the unbind/bind sysfs files (the
-/// installer already grants this).
 fn rebind_touchpad_usb() {
     let id = match find_touchpad_usb_id() {
         Some(s) => s,
@@ -176,40 +233,15 @@ fn rebind_touchpad_usb() {
         }
         let _ = child.wait();
         if path.ends_with("unbind") {
-            // Give the device a moment to fully detach before binding back.
             thread::sleep(Duration::from_millis(500));
         }
     }
     eprintln!("trackpad-guard: USB rebind complete");
 }
 
-/// Synchronously tell sway to enable/disable the touchpad. We *must* wait
-/// for the child to exit, otherwise back-to-back disable/enable calls race
-/// each other to the sway IPC socket — two parallel `swaymsg` processes
-/// don't preserve issue order, and the `enabled` command can land at sway
-/// before the `disabled` one. Result: sway sees `disabled` last and the
-/// touchpad stays off, while our in-process state thinks we re-enabled it.
-/// That was the "stuck → type → unstuck" symptom that's been plaguing us.
-fn swaymsg(state: &'static str) {
-    let status = Command::new("swaymsg")
-        .args(["input", "type:touchpad", "events", state])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    if let Err(e) = status {
-        eprintln!("trackpad-guard: swaymsg {state} failed to run: {e}");
-    } else if let Ok(s) = status {
-        if !s.success() {
-            eprintln!("trackpad-guard: swaymsg {state} exited {s}");
-        }
-    }
-}
-
 fn main() {
     let (tx, rx) = mpsc::channel::<Msg>();
 
-    // Signal handler thread: SIGUSR1 → manual USB rebind request.
-    // SIGTERM/SIGINT/SIGHUP → clean shutdown.
     {
         let tx = tx.clone();
         let mut signals =
@@ -229,7 +261,7 @@ fn main() {
         });
     }
 
-    // Initial keyboard discovery (retry until something shows up).
+    // Initial discovery.
     let keyboards = loop {
         let found = find_keyboards();
         if !found.is_empty() {
@@ -239,81 +271,166 @@ fn main() {
         thread::sleep(DISCOVER_INTERVAL);
     };
 
-    eprintln!("trackpad-guard: watching {} keyboard(s)", keyboards.len());
+    let mut touchpads = loop {
+        let found = find_touchpads();
+        if !found.is_empty() {
+            break found;
+        }
+        eprintln!("trackpad-guard: no matching touchpads found, retrying in 2s");
+        thread::sleep(DISCOVER_INTERVAL);
+    };
+
+    // On the AMIRA, both hid-generic and hid-multitouch can bind to the
+    // same physical USB interface and each creates its own input device
+    // ("Mouse" and "Touchpad" respectively) carrying the same underlying
+    // HID reports. Forwarding from both would double every event. Dedupe
+    // by USB product id, preferring the Touchpad-named variant.
+    touchpads = {
+        let mut chosen: HashMap<u16, (PathBuf, Device)> = HashMap::new();
+        for (path, dev) in touchpads {
+            let product = dev.input_id().product();
+            let is_touchpad = dev.name() == Some("AMIRA-KEYBOAR USB KEYBOARD Touchpad");
+            let prefer_new = match chosen.get(&product) {
+                None => true,
+                Some(existing) => {
+                    is_touchpad
+                        && existing.1.name() != Some("AMIRA-KEYBOAR USB KEYBOARD Touchpad")
+                }
+            };
+            if prefer_new {
+                chosen.insert(product, (path, dev));
+            }
+        }
+        chosen.into_values().collect()
+    };
+
+    // Build the virtual replacement device. Prefer mirroring from a
+    // "Touchpad"-named real device if present — hid-multitouch exposes
+    // it with INPUT_PROP_POINTER + INPUT_PROP_BUTTONPAD set, which is
+    // what makes libinput classify the result as a touchpad (not a
+    // plain mouse). Fall back to the first found otherwise.
+    let mirror_idx = touchpads
+        .iter()
+        .position(|(_, d)| d.name() == Some("AMIRA-KEYBOAR USB KEYBOARD Touchpad"))
+        .unwrap_or(0);
+    let virt = match create_virtual_touchpad(&touchpads[mirror_idx].1) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "trackpad-guard: failed to create virtual touchpad: {e}. \
+                 Check that /dev/uinput is writable by the input group \
+                 (see udev/60-trackpad-guard-amira.rules) and that the \
+                 uinput kernel module is loaded."
+            );
+            std::process::exit(1);
+        }
+    };
+
+    // EVIOCGRAB each real touchpad so nothing else reads them.
+    for (path, dev) in touchpads.iter_mut() {
+        if let Err(e) = dev.grab() {
+            eprintln!(
+                "trackpad-guard: failed to EVIOCGRAB {}: {e}. \
+                 If libinput is still holding it, you may need to restart \
+                 sway or unbind/rebind the USB device once for the \
+                 LIBINPUT_IGNORE_DEVICE tag to take effect.",
+                path.display()
+            );
+            std::process::exit(1);
+        }
+    }
+
+    eprintln!(
+        "trackpad-guard: watching {} keyboard(s), {} real touchpad(s), \
+         virtual device created (mirroring AMIRA capabilities)",
+        keyboards.len(),
+        touchpads.len()
+    );
+
     let mut keyboards_alive = keyboards.len();
+    let mut touchpads_alive = touchpads.len();
     for (_, device) in keyboards {
         spawn_keyboard_reader(device, tx.clone());
     }
+    for (_, device) in touchpads {
+        spawn_touchpad_reader(device, tx.clone());
+    }
 
-    // Make sure we start from a known-enabled state in case a previous run
-    // crashed while the touchpad was disabled.
-    swaymsg("enabled");
-
-    let mut pressed: HashSet<KeyCode> = HashSet::new();
-    let mut disabled = false;
-    let mut last_release: Option<Instant> = None;
-    // Time of the most recent press or release. Autorepeat (value=2) does
-    // NOT update this — that's the whole point. When a release is dropped,
-    // the kernel keeps firing autorepeats at ~33Hz, so we can't detect a
-    // stuck key by "no events for a while"; we have to detect "only
-    // autorepeats for a while."
-    let mut last_transition = Instant::now();
-    // Rate-limit floor for the SIGUSR1 manual rebind path.
+    let mut last_key_ts: Option<Instant> = None;
     let mut last_rebind = Instant::now() - Duration::from_secs(60);
     let debug = std::env::var_os("TRACKPAD_GUARD_DEBUG").is_some();
+    let mut virt = virt;
+    let mut dropped_batches: u64 = 0;
+    let mut forwarded_batches: u64 = 0;
+    // Initial state is "forwarding" — first batch with no recent key
+    // stays in that state silently; first batch during typing logs the
+    // transition.
+    let mut was_forwarding = true;
+    // Suppress unused-when-debug-off warning.
+    let _ = debug;
+
+    // Heartbeat counters: rolling 5-second window of activity so that
+    // when the user reports a stuck moment we can see exactly what the
+    // daemon was seeing in the surrounding period.
+    let mut hb_last = Instant::now();
+    let mut hb_tp: u64 = 0;
+    let mut hb_tp_fwd: u64 = 0;
+    let mut hb_tp_drop: u64 = 0;
+    let mut hb_key: u64 = 0;
+    const HEARTBEAT: Duration = Duration::from_secs(5);
 
     'main: loop {
-        let timeout = if !disabled {
-            // Block forever until a keyboard event or signal arrives.
-            Duration::from_secs(3600)
-        } else if !pressed.is_empty() {
-            STUCK_TIMEOUT.saturating_sub(last_transition.elapsed()) + Duration::from_millis(1)
-        } else if let Some(t) = last_release {
-            GRACE.saturating_sub(t.elapsed()) + Duration::from_millis(1)
-        } else {
-            Duration::from_millis(50)
+        let msg = match rx.recv() {
+            Ok(m) => m,
+            Err(_) => break 'main,
         };
+        match msg {
+            Msg::KeyActivity { at } => {
+                last_key_ts = Some(at);
+                hb_key += 1;
+            }
+            Msg::TouchpadEvents { events, at } => {
+                hb_tp += 1;
+                // Compare the touchpad event's arrival time against the
+                // last keyboard event's arrival time, NOT against now.
+                // This stays correct even if the main loop is processing
+                // a backlog — what matters is whether the kernel emitted
+                // the touchpad event close in time to a real keystroke.
+                let gap = last_key_ts.map(|t| at.saturating_duration_since(t));
+                let typing = gap
+                    .map(|g| g < KEY_TYPING_WINDOW)
+                    .unwrap_or(false);
 
-        match rx.recv_timeout(timeout) {
-            Ok(Msg::KeyEvent { key, value }) => match value {
-                1 => {
-                    pressed.insert(key);
-                    last_transition = Instant::now();
-                    last_release = None;
-                    // Only non-modifiers trigger the disable. Modifiers
-                    // stay in the `pressed` set (so "still typing"
-                    // stays accurate while they're held) but never on
-                    // their own flip the touchpad off.
-                    if !disabled && !is_modifier(key) {
-                        swaymsg("disabled");
-                        disabled = true;
-                        if debug {
-                            eprintln!("trackpad-guard: disabled (press {key:?})");
-                        }
-                    }
+                // Log every gate-state transition with the gap in ms so
+                // we can correlate user-reported "stuck" periods to what
+                // the daemon was actually seeing.
+                let became_dropping = typing && was_forwarding;
+                let became_forwarding = !typing && !was_forwarding;
+                if became_dropping {
+                    eprintln!(
+                        "trackpad-guard: gate ON (dropping) — gap-since-last-key={:?}",
+                        gap
+                    );
+                    was_forwarding = false;
+                } else if became_forwarding {
+                    eprintln!(
+                        "trackpad-guard: gate OFF (forwarding) — gap-since-last-key={:?}",
+                        gap
+                    );
+                    was_forwarding = true;
                 }
-                0 => {
-                    pressed.remove(&key);
-                    last_transition = Instant::now();
-                    // Start the grace timer when no non-modifier keys
-                    // remain (typing stopped). Dangling modifier holds
-                    // don't keep the touchpad off.
-                    if pressed.iter().all(|k| is_modifier(*k)) {
-                        last_release = Some(Instant::now());
-                    }
-                }
-                // value=2 is autorepeat — the key is still logically
-                // held. Deliberately NOT updating last_transition.
-                _ => {}
-            },
-            Ok(Msg::KeyboardReaderDied) => {
-                keyboards_alive = keyboards_alive.saturating_sub(1);
-                if keyboards_alive == 0 {
-                    eprintln!("trackpad-guard: all keyboards disconnected, exiting");
-                    break 'main;
+
+                if typing {
+                    dropped_batches += 1;
+                    hb_tp_drop += 1;
+                } else if let Err(e) = virt.emit(&events) {
+                    eprintln!("trackpad-guard: virtual emit failed: {e}");
+                } else {
+                    forwarded_batches += 1;
+                    hb_tp_fwd += 1;
                 }
             }
-            Ok(Msg::ManualRebind) => {
+            Msg::ManualRebind => {
                 if last_rebind.elapsed() < Duration::from_secs(5) {
                     eprintln!("trackpad-guard: SIGUSR1 ignored (rate-limited)");
                 } else {
@@ -322,44 +439,48 @@ fn main() {
                     last_rebind = Instant::now();
                 }
             }
-            Ok(Msg::Shutdown) => break 'main,
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => break 'main,
-        }
-
-        if disabled {
-            // Stuck-key safety net: if any key is marked pressed but we've
-            // seen only autorepeats (no real press or release) for
-            // STUCK_TIMEOUT, a release was dropped by the kernel/USB layer.
-            // Force-clear and let the grace timer re-enable.
-            if !pressed.is_empty() && last_transition.elapsed() >= STUCK_TIMEOUT {
-                eprintln!(
-                    "trackpad-guard: autorepeat-only for {:?}, clearing stuck state ({} key(s): {:?})",
-                    STUCK_TIMEOUT,
-                    pressed.len(),
-                    pressed,
-                );
-                pressed.clear();
-                last_release = Some(Instant::now());
-            }
-
-            // Grace period expired and no non-modifiers remain pressed —
-            // re-enable. Held modifiers alone don't count as typing.
-            if pressed.iter().all(|k| is_modifier(*k)) {
-                if let Some(t) = last_release {
-                    if t.elapsed() >= GRACE {
-                        swaymsg("enabled");
-                        disabled = false;
-                        last_release = None;
-                        if debug {
-                            eprintln!("trackpad-guard: enabled (grace elapsed)");
-                        }
-                    }
+            Msg::KeyboardReaderDied => {
+                keyboards_alive = keyboards_alive.saturating_sub(1);
+                if keyboards_alive == 0 {
+                    eprintln!("trackpad-guard: all keyboards disconnected, exiting");
+                    break 'main;
                 }
             }
+            Msg::TouchpadReaderDied => {
+                touchpads_alive = touchpads_alive.saturating_sub(1);
+                if touchpads_alive == 0 {
+                    eprintln!("trackpad-guard: all touchpads disconnected, exiting");
+                    break 'main;
+                }
+            }
+            Msg::Shutdown => break 'main,
+        }
+
+        // Heartbeat: once HEARTBEAT has elapsed AND there's been any
+        // activity, emit a one-liner summarizing the window. We only log
+        // when something happened so an idle daemon doesn't spam logs.
+        let elapsed = hb_last.elapsed();
+        if elapsed >= HEARTBEAT && (hb_tp != 0 || hb_key != 0) {
+            let last_key_ago = last_key_ts.map(|t| t.elapsed());
+            eprintln!(
+                "trackpad-guard: hb {}s — tp_batches={} (fwd={} drop={}) key_batches={} last_key_ago={:?}",
+                elapsed.as_secs(),
+                hb_tp,
+                hb_tp_fwd,
+                hb_tp_drop,
+                hb_key,
+                last_key_ago,
+            );
+            hb_last = Instant::now();
+            hb_tp = 0;
+            hb_tp_fwd = 0;
+            hb_tp_drop = 0;
+            hb_key = 0;
         }
     }
 
-    // Always re-enable on exit.
-    swaymsg("enabled");
+    eprintln!(
+        "trackpad-guard: exiting (forwarded {} batches, dropped {})",
+        forwarded_batches, dropped_batches
+    );
 }

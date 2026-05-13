@@ -506,6 +506,21 @@ if systemctl --user is-active --quiet graphical-session.target 2>/dev/null; then
 fi
 success "argon-lid-monitor user service installed and enabled"
 
+# trackpad-guard v4 architecture: intercepts AMIRA touchpad evdev directly
+# and exposes a virtual uinput replacement. Needs (a) a udev rule that
+# tells libinput to ignore the real touchpad nodes, and (b) the uinput
+# kernel module loaded so the daemon can create the replacement device.
+info "Installing trackpad-guard udev rule..."
+sudo install -m 0644 "$REPO_DIR/trackpad-guard/udev/60-trackpad-guard-amira.rules" \
+    /etc/udev/rules.d/60-trackpad-guard-amira.rules
+info "Installing trackpad-guard modules-load.d config..."
+sudo install -m 0644 "$REPO_DIR/trackpad-guard/modules-load.d/trackpad-guard.conf" \
+    /etc/modules-load.d/trackpad-guard.conf
+sudo modprobe uinput 2>/dev/null || true
+sudo udevadm control --reload-rules
+sudo udevadm trigger --action=change --subsystem-match=input
+sudo udevadm trigger --action=change /sys/class/misc/uinput 2>/dev/null || true
+
 # Install and enable the trackpad-guard user service
 info "Installing trackpad-guard systemd user unit..."
 cp "$REPO_DIR/trackpad-guard/systemd/trackpad-guard.service" "$HOME/.config/systemd/user/"

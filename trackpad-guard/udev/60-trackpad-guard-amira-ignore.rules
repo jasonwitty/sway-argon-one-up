@@ -1,0 +1,16 @@
+# Service-managed: this file is installed into /etc/udev/rules.d/ only
+# while trackpad-guard.service is running, and removed when it stops.
+# See trackpad-guard/scripts/manage-udev-rule.sh.
+#
+# Why: when trackpad-guard is running, the daemon EVIOCGRAB's the real
+# AMIRA touchpad and exposes a virtual uinput device to libinput. We
+# need libinput to skip the real device or it'd fight us for events.
+# But when trackpad-guard is *not* running there's no virtual
+# replacement, so leaving this rule installed would mean the login
+# screen / a user who toggled the daemon off has no touchpad at all.
+# Hence the service-managed lifecycle.
+
+# The AMIRA's mouse-class interface gets named "Mouse" under hid-generic
+# and "Touchpad" under hid-multitouch — catch both.
+SUBSYSTEM=="input", ATTRS{name}=="AMIRA-KEYBOAR USB KEYBOARD Mouse", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{name}=="AMIRA-KEYBOAR USB KEYBOARD Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"

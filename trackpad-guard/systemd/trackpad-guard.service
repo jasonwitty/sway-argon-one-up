@@ -11,12 +11,21 @@ After=systemd-modules-load.service
 
 [Service]
 Type=simple
+# The LIBINPUT_IGNORE udev rule is service-managed: installed when the
+# daemon starts, removed when it stops. Without this, disabling the
+# service would leave libinput still ignoring the real AMIRA touchpad
+# and no virtual replacement, breaking the touchpad entirely instead
+# of just turning off our DWT layer. The helper script also USB-rebinds
+# the touchpad so libinput re-evaluates the device under the current
+# ruleset.
+ExecStartPre=/usr/local/lib/trackpad-guard/manage-udev-rule.sh install
 ExecStart=/usr/local/bin/trackpad-guard
+ExecStopPost=/usr/local/lib/trackpad-guard/manage-udev-rule.sh remove
 Restart=on-failure
 RestartSec=2s
 # Root is needed for the SIGUSR1 / wedge-watchdog USB rebind path, which
-# writes to /sys/bus/usb/drivers/usb/{unbind,bind}. The daemon itself is
-# otherwise scoped to /dev/input/event* + /dev/uinput.
+# writes to /sys/bus/usb/drivers/usb/{unbind,bind}, and for the
+# udev-rule install/remove in ExecStartPre/ExecStopPost.
 User=root
 
 [Install]

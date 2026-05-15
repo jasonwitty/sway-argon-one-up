@@ -1,0 +1,6 @@
+# /dev/uinput permissions for trackpad-guard. Permanent — installed
+# regardless of whether the trackpad-guard service is enabled. The
+# daemon currently runs as root (system service) so it can already
+# create the virtual uinput device, but this rule lets the binary still
+# work if a developer runs it by hand as a user in the `input` group.
+KERNEL=="uinput", GROUP="input", MODE="0660"

@@ -507,12 +507,24 @@ fi
 success "argon-lid-monitor user service installed and enabled"
 
 # trackpad-guard v4 architecture: intercepts AMIRA touchpad evdev directly
-# and exposes a virtual uinput replacement. Needs (a) a udev rule that
-# tells libinput to ignore the real touchpad nodes, and (b) the uinput
-# kernel module loaded so the daemon can create the replacement device.
-info "Installing trackpad-guard udev rule..."
-sudo install -m 0644 "$REPO_DIR/trackpad-guard/udev/60-trackpad-guard-amira.rules" \
-    /etc/udev/rules.d/60-trackpad-guard-amira.rules
+# and exposes a virtual uinput replacement. The LIBINPUT_IGNORE rule is
+# now service-managed (installed on start, removed on stop) so that
+# disabling the service doesn't leave the touchpad completely broken —
+# see trackpad-guard/scripts/manage-udev-rule.sh.
+info "Cleaning up old trackpad-guard udev rule (pre-split layout)..."
+sudo rm -f /etc/udev/rules.d/60-trackpad-guard-amira.rules
+
+info "Installing trackpad-guard permanent udev rule (uinput perms)..."
+sudo install -m 0644 "$REPO_DIR/trackpad-guard/udev/60-trackpad-guard-uinput.rules" \
+    /etc/udev/rules.d/60-trackpad-guard-uinput.rules
+
+info "Installing trackpad-guard service-managed assets..."
+sudo install -d -m 0755 /usr/local/lib/trackpad-guard
+sudo install -m 0644 "$REPO_DIR/trackpad-guard/udev/60-trackpad-guard-amira-ignore.rules" \
+    /usr/local/lib/trackpad-guard/60-trackpad-guard-amira-ignore.rules
+sudo install -m 0755 "$REPO_DIR/trackpad-guard/scripts/manage-udev-rule.sh" \
+    /usr/local/lib/trackpad-guard/manage-udev-rule.sh
+
 info "Installing trackpad-guard modules-load.d config..."
 sudo install -m 0644 "$REPO_DIR/trackpad-guard/modules-load.d/trackpad-guard.conf" \
     /etc/modules-load.d/trackpad-guard.conf

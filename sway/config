@@ -241,10 +241,15 @@ bindsym $mod+r mode "resize"
     # Theme switcher
     bindsym $mod+t exec ~/.local/bin/switch-theme --picker
     # Manual trackpad rescue: if the AMIRA touchpad becomes unresponsive,
-    # this signals trackpad-guard to do a USB unbind+rebind on the
-    # touchpad-paired interface (vid:pid 6080:8061). The daemon also has
-    # an automatic heuristic, but the manual trigger is faster.
-    bindsym $mod+Shift+t exec pkill -USR1 -f /usr/local/bin/trackpad-guard
+    # this asks systemd to deliver SIGUSR1 to the (root-owned) trackpad-
+    # guard system service, which triggers a USB unbind+rebind on the
+    # touchpad interface (vid:pid 6080:8061). We can't pkill the daemon
+    # directly because it runs as root; the sudoers entry installed by
+    # install.sh permits exactly this systemctl-kill command without
+    # password. The daemon also has an automatic wedge-watchdog, but
+    # this manual trigger covers cases the heuristic can't detect (e.g.
+    # the libinput-downstream stall where events still flow through us).
+    bindsym $mod+Shift+t exec sudo -n /usr/bin/systemctl kill -s SIGUSR1 trackpad-guard.service
     # Help overlay
     bindsym $mod+Shift+h exec ~/.local/bin/sway-help
     # Brave browser

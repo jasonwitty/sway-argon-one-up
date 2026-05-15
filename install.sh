@@ -521,15 +521,31 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger --action=change --subsystem-match=input
 sudo udevadm trigger --action=change /sys/class/misc/uinput 2>/dev/null || true
 
-# Install and enable the trackpad-guard user service
-info "Installing trackpad-guard systemd user unit..."
-cp "$REPO_DIR/trackpad-guard/systemd/trackpad-guard.service" "$HOME/.config/systemd/user/"
-systemctl --user daemon-reload
-systemctl --user enable trackpad-guard.service
-if systemctl --user is-active --quiet graphical-session.target 2>/dev/null; then
-    systemctl --user start trackpad-guard.service
+# trackpad-guard is now a SYSTEM service (not user). It needs to run
+# during the greeter's sway session as well — the system-wide udev rule
+# above tells libinput to ignore the real AMIRA touchpad, so without a
+# replacement virtual device running at boot the login screen has no
+# usable touchpad. Running system-wide also gives us privileged USB
+# rebind without needing sudoers carve-outs.
+#
+# Upgrade path: if the old per-user unit is enabled or running, tear it
+# down before installing the system unit (otherwise both would race for
+# /dev/uinput).
+info "Migrating away from old trackpad-guard user unit (if present)..."
+if systemctl --user is-enabled --quiet trackpad-guard.service 2>/dev/null \
+   || systemctl --user is-active --quiet trackpad-guard.service 2>/dev/null; then
+    systemctl --user disable --now trackpad-guard.service 2>/dev/null || true
 fi
-success "trackpad-guard user service installed and enabled"
+rm -f "$HOME/.config/systemd/user/trackpad-guard.service"
+systemctl --user daemon-reload 2>/dev/null || true
+
+info "Installing trackpad-guard systemd system unit..."
+sudo install -m 0644 "$REPO_DIR/trackpad-guard/systemd/trackpad-guard.service" \
+    /etc/systemd/system/trackpad-guard.service
+sudo systemctl daemon-reload
+sudo systemctl enable trackpad-guard.service
+sudo systemctl restart trackpad-guard.service
+success "trackpad-guard system service installed and enabled"
 
 # With argon-battery-rs owning battery polling + CW2217 self-heal, and
 # argon-lid-monitor owning lid events, Argon's Python daemons have nothing
@@ -614,6 +630,9 @@ $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
+$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable --now trackpad-guard.service
+$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable --now trackpad-guard.service
+$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl kill -s SIGUSR1 trackpad-guard.service
 SUDOEOF
 sudo visudo -cf /etc/sudoers.d/lid-power
 success "Power management sudoers configured"

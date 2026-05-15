@@ -1,13 +1,23 @@
 [Unit]
-Description=Disable sway touchpad while typing (AMIRA combo keyboard workaround)
-After=graphical-session.target
-PartOf=graphical-session.target
+# System-level service: trackpad-guard must run during the greeter's sway
+# session too, not just inside the user session. The udev rule applies
+# system-wide and tells libinput to ignore the real AMIRA touchpad — so
+# without a replacement virtual device in the greeter, there'd be no
+# usable touchpad on the login screen. Running as a system service keeps
+# the virtual device alive from boot onward, regardless of which user
+# (or none) is logged in.
+Description=Disable sway touchpad while typing (AMIRA combo keyboard workaround) — system-wide
+After=systemd-modules-load.service
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/trackpad-guard
 Restart=on-failure
 RestartSec=2s
+# Root is needed for the SIGUSR1 / wedge-watchdog USB rebind path, which
+# writes to /sys/bus/usb/drivers/usb/{unbind,bind}. The daemon itself is
+# otherwise scoped to /dev/input/event* + /dev/uinput.
+User=root
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target

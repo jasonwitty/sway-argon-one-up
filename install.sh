@@ -525,6 +525,10 @@ sudo install -m 0644 "$REPO_DIR/trackpad-guard/udev/60-trackpad-guard-amira-igno
 sudo install -m 0755 "$REPO_DIR/trackpad-guard/scripts/manage-udev-rule.sh" \
     /usr/local/lib/trackpad-guard/manage-udev-rule.sh
 
+info "Installing trackpad-guard toggle wrapper..."
+sudo install -m 0755 "$REPO_DIR/trackpad-guard/scripts/trackpad-guard-toggle.sh" \
+    /usr/local/bin/trackpad-guard-toggle
+
 info "Installing trackpad-guard modules-load.d config..."
 sudo install -m 0644 "$REPO_DIR/trackpad-guard/modules-load.d/trackpad-guard.conf" \
     /etc/modules-load.d/trackpad-guard.conf
@@ -555,9 +559,12 @@ info "Installing trackpad-guard systemd system unit..."
 sudo install -m 0644 "$REPO_DIR/trackpad-guard/systemd/trackpad-guard.service" \
     /etc/systemd/system/trackpad-guard.service
 sudo systemctl daemon-reload
-sudo systemctl enable trackpad-guard.service
-sudo systemctl restart trackpad-guard.service
-success "trackpad-guard system service installed and enabled"
+# Beta opt-in: trackpad-guard ships disabled. The user enables it from the
+# system-dashboard tile or with Mod+Shift+G. Force-disable on every install
+# (including upgrades) so the beta state is consistent — if you relied on
+# it being on, just toggle it back on once after the upgrade.
+sudo systemctl disable --now trackpad-guard.service 2>/dev/null || true
+success "trackpad-guard installed (disabled by default — enable via dashboard or Mod+Shift+G)"
 
 # With argon-battery-rs owning battery polling + CW2217 self-heal, and
 # argon-lid-monitor owning lid events, Argon's Python daemons have nothing

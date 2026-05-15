@@ -1,14 +1,16 @@
 //! Trackpad-guard state — wraps `systemctl is-active trackpad-guard.service`.
 //! trackpad-guard runs as a SYSTEM service (not user) so it can also cover
 //! the greeter's sway session, where no user is logged in yet. Reading
-//! state doesn't need root; toggling does, so we shell out via `sudo -n`
-//! against a sudoers entry installed by install.sh.
-//! Toggling uses `enable --now` / `disable --now` so the choice persists.
+//! state doesn't need root; toggling does, so we shell out to the
+//! `trackpad-guard-toggle` wrapper which handles sudo + notify-send.
+//! The same wrapper is bound to Mod+Shift+G so the on/off notification is
+//! identical regardless of which path the user took.
 
 use serde::Serialize;
 use std::process::Command;
 
 const UNIT: &str = "trackpad-guard.service";
+const TOGGLE_BIN: &str = "/usr/local/bin/trackpad-guard-toggle";
 
 #[derive(Serialize, Clone, Debug)]
 pub struct TrackpadGuardState {
@@ -25,17 +27,12 @@ pub fn read() -> TrackpadGuardState {
 }
 
 pub fn toggle() -> Result<(), String> {
-    let action = if read().active { "disable" } else { "enable" };
-    let status = Command::new("sudo")
-        .args(["-n", "systemctl", action, "--now", UNIT])
+    let status = Command::new(TOGGLE_BIN)
         .status()
-        .map_err(|e| format!("sudo systemctl {action} failed to spawn: {e}"))?;
+        .map_err(|e| format!("{TOGGLE_BIN} failed to spawn: {e}"))?;
     if status.success() {
         Ok(())
     } else {
-        Err(format!(
-            "sudo systemctl {action} --now {UNIT} exited {:?}",
-            status.code()
-        ))
+        Err(format!("{TOGGLE_BIN} exited {:?}", status.code()))
     }
 }

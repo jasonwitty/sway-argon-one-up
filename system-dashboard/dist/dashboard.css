@@ -172,6 +172,21 @@ header .title {
 .card.trackpad.on .icon { color: var(--trackpad-on); }
 .card.trackpad.off .icon { color: var(--trackpad-off); }
 
+/* "beta" pill — inlined inside the label so it sits next to the text */
+.beta-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--subtext);
+  margin-left: 4px;
+  vertical-align: 2px;
+}
+
 /* iOS-style toggle switch (used by trackpad-guard card) */
 .switch {
   position: relative;

@@ -250,6 +250,10 @@ bindsym $mod+r mode "resize"
     # this manual trigger covers cases the heuristic can't detect (e.g.
     # the libinput-downstream stall where events still flow through us).
     bindsym $mod+Shift+t exec sudo -n /usr/bin/systemctl kill -s SIGUSR1 trackpad-guard.service
+    # Trackpad guard (beta) on/off. Same wrapper the dashboard tile calls,
+    # so the on/off notification is consistent and this works even when the
+    # cursor is wedged and you can't click the dashboard switch.
+    bindsym $mod+Shift+g exec /usr/local/bin/trackpad-guard-toggle
     # Help overlay
     bindsym $mod+Shift+h exec ~/.local/bin/sway-help
     # Brave browser

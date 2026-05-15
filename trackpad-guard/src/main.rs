@@ -68,7 +68,9 @@ enum Msg {
     /// drift under load: a backlog can make us think a stale keystroke
     /// happened "now" and incorrectly gate touchpad events that are
     /// actually well past the typing window.
-    KeyActivity { at: Instant },
+    KeyActivity {
+        at: Instant,
+    },
     TouchpadEvents {
         events: Vec<InputEvent>,
         at: Instant,
@@ -79,7 +81,9 @@ enum Msg {
     /// invalidated). Carries the device path so the main loop can drop
     /// just that entry from the active set and schedule a rescan to
     /// re-grab whatever node reappears.
-    TouchpadReaderDied { path: PathBuf },
+    TouchpadReaderDied {
+        path: PathBuf,
+    },
     ManualRebind,
     Shutdown,
 }
@@ -92,7 +96,9 @@ fn matches_touchpad(device: &Device) -> bool {
     if device.input_id().vendor() != VENDOR_ID {
         return false;
     }
-    let Some(name) = device.name() else { return false };
+    let Some(name) = device.name() else {
+        return false;
+    };
     TOUCHPAD_NAMES.contains(&name)
 }
 
@@ -148,10 +154,7 @@ fn spawn_touchpad_reader(path: PathBuf, mut device: Device, tx: mpsc::Sender<Msg
             Ok(events) => {
                 let at = Instant::now();
                 let batch: Vec<InputEvent> = events.collect();
-                if !batch.is_empty()
-                    && tx
-                        .send(Msg::TouchpadEvents { events: batch, at })
-                        .is_err()
+                if !batch.is_empty() && tx.send(Msg::TouchpadEvents { events: batch, at }).is_err()
                 {
                     return;
                 }
@@ -175,8 +178,7 @@ fn dedupe_touchpads(touchpads: Vec<(PathBuf, Device)>) -> Vec<(PathBuf, Device)>
         let prefer_new = match chosen.get(&product) {
             None => true,
             Some(existing) => {
-                is_touchpad
-                    && existing.1.name() != Some("AMIRA-KEYBOAR USB KEYBOARD Touchpad")
+                is_touchpad && existing.1.name() != Some("AMIRA-KEYBOAR USB KEYBOARD Touchpad")
             }
         };
         if prefer_new {
@@ -191,10 +193,7 @@ fn dedupe_touchpads(touchpads: Vec<(PathBuf, Device)>) -> Vec<(PathBuf, Device)>
 /// acquired devices. Safe to call repeatedly — devices already in
 /// `active` are skipped, so this is the same primitive used both at
 /// startup and on recovery.
-fn try_acquire_missing(
-    active: &mut HashSet<PathBuf>,
-    tx: &mpsc::Sender<Msg>,
-) -> usize {
+fn try_acquire_missing(active: &mut HashSet<PathBuf>, tx: &mpsc::Sender<Msg>) -> usize {
     let mut acquired = 0;
     for (path, mut dev) in dedupe_touchpads(find_touchpads()) {
         if active.contains(&path) {
@@ -574,7 +573,7 @@ fn main() {
         let now = Instant::now();
 
         // Rescan deadline?
-        if next_rescan.map_or(false, |t| t <= now) {
+        if next_rescan.is_some_and(|t| t <= now) {
             let new = try_acquire_missing(&mut active_touchpads, &tx);
             if new > 0 {
                 eprintln!(
@@ -607,7 +606,7 @@ fn main() {
             let silent_for = last_tp_event.map(|t| t.elapsed());
             let cooldown_ok = last_rebind.elapsed() > WEDGE_COOLDOWN;
             let active_recently = tp_burst_since_rebind >= WEDGE_BURST_MIN;
-            let silent = silent_for.map_or(false, |d| d > WEDGE_SILENCE);
+            let silent = silent_for.is_some_and(|d| d > WEDGE_SILENCE);
             // Primary truth signal: is the AMIRA touchpad currently
             // bound to the usb driver? If it's still on the bus, the
             // "silence" is the user just not touching the trackpad —
@@ -621,8 +620,7 @@ fn main() {
                     "trackpad-guard: wedge watchdog — touchpad silent for \
                      {:?} after {} batches AND USB device off the bus, \
                      forcing rebind",
-                    silent_for,
-                    tp_burst_since_rebind,
+                    silent_for, tp_burst_since_rebind,
                 );
                 rebind_touchpad_usb();
                 last_rebind = Instant::now();
@@ -656,9 +654,7 @@ fn main() {
                 // a backlog — what matters is whether the kernel emitted
                 // the touchpad event close in time to a real keystroke.
                 let gap = last_key_ts.map(|t| at.saturating_duration_since(t));
-                let typing = gap
-                    .map(|g| g < KEY_TYPING_WINDOW)
-                    .unwrap_or(false);
+                let typing = gap.map(|g| g < KEY_TYPING_WINDOW).unwrap_or(false);
 
                 // Log every gate-state transition with the gap in ms so
                 // we can correlate user-reported "stuck" periods to what

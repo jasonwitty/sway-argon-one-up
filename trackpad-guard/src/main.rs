@@ -25,10 +25,13 @@
 //! SIGUSR1 still triggers a manual USB unbind/rebind on the AMIRA
 //! touchpad interface (vid:pid 6080:8061), bound to Mod+Shift+T.
 
-use evdev::{uinput::VirtualDevice, Device, EventSummary, InputEvent, UinputAbsSetup};
+use evdev::{
+    uinput::VirtualDevice, AbsoluteAxisCode, Device, EventSummary, EventType, InputEvent, KeyCode,
+    UinputAbsSetup,
+};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM, SIGUSR1};
 use signal_hook::iterator::Signals;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -59,6 +62,224 @@ const TOUCHPAD_USB_VENDOR_STR: &str = "6080";
 const KEY_TYPING_WINDOW: Duration = Duration::from_millis(150);
 
 const DISCOVER_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Phantom-contact / stuck-stream filter. Catches failure modes where
+/// the AMIRA touchpad delivers a steady event stream that translates to
+/// no cursor motion — observed across multiple stuck reports on
+/// 2026-05-15:
+///   - Classic phantom: BTN_TOUCH=1 held for minutes, position frozen.
+///   - Jittery phantom: BTN_TOUCH=1 held, position wandering by 5-7 units
+///     around a center point (not enough to move cursor visibly).
+///   - Flicker stuck: BTN_TOUCH rapidly toggling but position never
+///     escaping a small region.
+///
+/// Earlier versions of this filter gated on BTN_TOUCH=1 — that missed
+/// the flicker case because each touch_down reset the stationary timer.
+/// The current logic is BTN_TOUCH-independent: it tracks how long the
+/// reported (ABS_X, ABS_Y) has stayed within PHANTOM_NOISE of a fixed
+/// reference, requires a high recent batch rate (so we only fire when
+/// the touchpad is actively reporting, not when the user is idle), and
+/// triggers recovery when the position has been stuck for PHANTOM_HOLD.
+///
+/// Recovery is two-stage:
+///   (a) emit a synthetic MT slot-0 release into the virtual device so
+///       libinput's state machine sees the finger lift, and
+///   (b) issue a USB rebind on the touchpad interface (subject to
+///       PHANTOM_REBIND_COOLDOWN). Without the rebind the firmware
+///       keeps emitting on the stuck tracking ID and libinput refuses
+///       those events as a new contact; the rebind clears the firmware
+///       state.
+/// Minimum time the reported position must stay within PHANTOM_NOISE
+/// before we declare the contact phantom. Tradeoff axis: lower values
+/// catch shorter stuck events but false-positive on legitimate user
+/// pauses (e.g. resting a finger mid-cursor-motion, peaks of slow
+/// circles). 2s was demonstrably too low — fired repeatedly during
+/// normal touchpad use, causing the "stuck for ~1s then cursor catches
+/// up with a jitter" symptom (the suppress window persisting until
+/// motion exceeds PHANTOM_BREAK). The original multi-minute phantom
+/// events would still be caught at 10s, just with a longer initial
+/// wait. Sub-10s stuck events the user has historically observed
+/// self-resolved without intervention.
+const PHANTOM_HOLD: Duration = Duration::from_secs(10);
+/// Position drift below this threshold counts as "still." 4 units
+/// (~0.3mm at 14 units/mm) is below typical finger jitter for
+/// intentional motion but above pure sensor noise. Earlier value of 8u
+/// missed jittery phantoms whose position wandered 5-7u while the cursor
+/// was clearly frozen.
+const PHANTOM_NOISE: i32 = 4;
+/// Motion this large exits phantom-suppress mode — the user clearly
+/// moved a real finger with intent.
+const PHANTOM_BREAK: i32 = 40;
+/// Minimum batches in the last RATE_WINDOW to count as "actively
+/// reporting." Below this we treat the touchpad as idle and won't fire
+/// regardless of how long the position has been stationary — protects
+/// against false positives when a single stale position read sits in
+/// the buffer while the user does nothing.
+const PHANTOM_MIN_RATE_BATCHES: usize = 30;
+const PHANTOM_RATE_WINDOW: Duration = Duration::from_secs(2);
+/// Cooldown between phantom-triggered USB rebinds. Shorter than the
+/// wedge-watchdog cooldown (30s) because phantom faults can come in
+/// bursts as firmware recovers and re-enters the bad state — but long
+/// enough that we don't burn the bus with rebinds on every flutter.
+const PHANTOM_REBIND_COOLDOWN: Duration = Duration::from_secs(15);
+
+#[derive(Debug)]
+enum PhantomAction {
+    /// Forward this batch normally.
+    Forward,
+    /// Suppress this batch — we are already in phantom mode.
+    Drop,
+    /// First batch we've classified as phantom. Caller should emit a
+    /// synthetic release into the virtual device + trigger a USB rebind,
+    /// then drop this batch.
+    EmitReleaseAndDrop,
+}
+
+struct PhantomGuard {
+    /// Reference position for the current "stationary window." Updated
+    /// whenever position drifts beyond PHANTOM_NOISE.
+    ref_x: i32,
+    ref_y: i32,
+    ref_known: bool,
+    /// When the position last moved beyond PHANTOM_NOISE. None until the
+    /// first position read.
+    stationary_since: Option<Instant>,
+    /// Timestamps of recent batches, used to compute the "actively
+    /// reporting" rate gate. Trimmed to PHANTOM_RATE_WINDOW on each
+    /// observe() call.
+    recent_batches: VecDeque<Instant>,
+    /// True once we've declared phantom for this stuck event. Cleared
+    /// when a real BTN_TOUCH=0 arrives or motion exceeds PHANTOM_BREAK.
+    active: bool,
+}
+
+impl PhantomGuard {
+    fn new() -> Self {
+        Self {
+            ref_x: 0,
+            ref_y: 0,
+            ref_known: false,
+            stationary_since: None,
+            recent_batches: VecDeque::new(),
+            active: false,
+        }
+    }
+
+    /// Drop all internal state. Called after a rebind so the next
+    /// device's events start with a clean slate instead of comparing
+    /// against pre-rebind positions.
+    fn reset(&mut self) {
+        self.ref_known = false;
+        self.stationary_since = None;
+        self.recent_batches.clear();
+        self.active = false;
+    }
+
+    fn observe(&mut self, batch: &[InputEvent], now: Instant) -> PhantomAction {
+        // Trim and record the batch-rate window.
+        while let Some(&front) = self.recent_batches.front() {
+            if now.duration_since(front) > PHANTOM_RATE_WINDOW {
+                self.recent_batches.pop_front();
+            } else {
+                break;
+            }
+        }
+        self.recent_batches.push_back(now);
+
+        let mut touch_up = false;
+        let mut new_x: Option<i32> = None;
+        let mut new_y: Option<i32> = None;
+        for ev in batch {
+            match ev.destructure() {
+                EventSummary::Key(_, code, value) => {
+                    if code == KeyCode::BTN_TOUCH && value == 0 {
+                        touch_up = true;
+                    }
+                }
+                EventSummary::AbsoluteAxis(_, code, value) => {
+                    if code == AbsoluteAxisCode::ABS_X {
+                        new_x = Some(value);
+                    } else if code == AbsoluteAxisCode::ABS_Y {
+                        new_y = Some(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if touch_up {
+            // Hardware reported a real release — clean slate. Forward so
+            // libinput sees the lift.
+            self.ref_known = false;
+            self.stationary_since = None;
+            self.active = false;
+            return PhantomAction::Forward;
+        }
+
+        // Update reference position / stationary timer from any position
+        // events in this batch.
+        if let (Some(x), Some(y)) = (new_x.or_else(|| self.ref_known.then_some(self.ref_x)),
+                                      new_y.or_else(|| self.ref_known.then_some(self.ref_y))) {
+            if !self.ref_known {
+                self.ref_x = x;
+                self.ref_y = y;
+                self.ref_known = true;
+                self.stationary_since = Some(now);
+            } else if new_x.is_some() || new_y.is_some() {
+                let dx = (x - self.ref_x).abs();
+                let dy = (y - self.ref_y).abs();
+                if dx > PHANTOM_NOISE || dy > PHANTOM_NOISE {
+                    self.ref_x = x;
+                    self.ref_y = y;
+                    self.stationary_since = Some(now);
+                    if self.active && (dx > PHANTOM_BREAK || dy > PHANTOM_BREAK) {
+                        // Intentional motion → exit phantom mode and let
+                        // libinput pick up the new position.
+                        self.active = false;
+                        return PhantomAction::Forward;
+                    }
+                }
+            }
+        }
+
+        if self.active {
+            return PhantomAction::Drop;
+        }
+
+        // Detection requires (a) the position has been stuck long enough
+        // and (b) the touchpad is actively reporting at a high rate.
+        // The rate gate is the key protection against false positives on
+        // idle: if the user isn't touching, batches don't arrive, and we
+        // don't fire regardless of how stale the ref position is.
+        let stuck_long_enough = self
+            .stationary_since
+            .is_some_and(|t| now.duration_since(t) >= PHANTOM_HOLD);
+        let actively_reporting = self.recent_batches.len() >= PHANTOM_MIN_RATE_BATCHES;
+        if stuck_long_enough && actively_reporting {
+            self.active = true;
+            return PhantomAction::EmitReleaseAndDrop;
+        }
+
+        PhantomAction::Forward
+    }
+}
+
+/// Emit a synthetic slot-0 release into the virtual device. This is what
+/// the AMIRA firmware would send if it had noticed the finger lift —
+/// ABS_MT_TRACKING_ID=-1 retires the slot, then BTN_TOUCH=0 +
+/// BTN_TOOL_FINGER=0 tell libinput no fingers remain. SYN_REPORT is added
+/// automatically by VirtualDevice::emit. Only slot 0 is released: every
+/// phantom event we've observed so far is single-touch, and aggressively
+/// releasing higher slots could disrupt legitimate multi-touch gestures.
+fn emit_phantom_release(virt: &mut VirtualDevice) -> std::io::Result<()> {
+    let events = [
+        InputEvent::new(EventType::ABSOLUTE.0, AbsoluteAxisCode::ABS_MT_SLOT.0, 0),
+        InputEvent::new(EventType::ABSOLUTE.0, AbsoluteAxisCode::ABS_MT_TRACKING_ID.0, -1),
+        InputEvent::new(EventType::KEY.0, KeyCode::BTN_TOUCH.0, 0),
+        InputEvent::new(EventType::KEY.0, KeyCode::BTN_TOOL_FINGER.0, 0),
+    ];
+    virt.emit(&events)
+}
 
 enum Msg {
     /// A keyboard event batch arrived. The timestamp is captured in the
@@ -498,6 +719,8 @@ fn main() {
     let mut virt = virt;
     let mut dropped_batches: u64 = 0;
     let mut forwarded_batches: u64 = 0;
+    let mut phantom_batches: u64 = 0;
+    let mut phantom_guard = PhantomGuard::new();
     // Initial state is "forwarding" — first batch with no recent key
     // stays in that state silently; first batch during typing logs the
     // transition.
@@ -512,6 +735,7 @@ fn main() {
     let mut hb_tp: u64 = 0;
     let mut hb_tp_fwd: u64 = 0;
     let mut hb_tp_drop: u64 = 0;
+    let mut hb_tp_phantom: u64 = 0;
     let mut hb_key: u64 = 0;
     const HEARTBEAT: Duration = Duration::from_secs(5);
 
@@ -549,6 +773,14 @@ fn main() {
     // visible, so the presence check is gone.
     let mut last_tp_event: Option<Instant> = None;
     let mut tp_burst_since_rebind: u32 = 0;
+    // Last observed BTN_TOUCH value from the real touchpad. None until
+    // we see a key transition. Used by the wedge watchdog to distinguish
+    // "user lifted, now idle" (last_btn_touch = Some(0), silence is
+    // expected) from "finger was down, firmware went silent on us"
+    // (last_btn_touch = Some(1), silence is a stuck contact and we
+    // should rebind even if the USB device is still bound — the bus
+    // presence check alone misses this class).
+    let mut last_btn_touch: Option<i32> = None;
     let mut next_watchdog = Instant::now() + Duration::from_secs(1);
     const WATCHDOG_TICK: Duration = Duration::from_secs(1);
     // Silence threshold is intentionally long. A short threshold (we
@@ -607,24 +839,53 @@ fn main() {
             let cooldown_ok = last_rebind.elapsed() > WEDGE_COOLDOWN;
             let active_recently = tp_burst_since_rebind >= WEDGE_BURST_MIN;
             let silent = silent_for.is_some_and(|d| d > WEDGE_SILENCE);
-            // Primary truth signal: is the AMIRA touchpad currently
-            // bound to the usb driver? If it's still on the bus, the
-            // "silence" is the user just not touching the trackpad —
-            // firing a rebind here causes a visible cursor blackout,
-            // which the user perceives as jitter. If it's off the bus,
-            // events truly cannot reach us and a rebind is the right
-            // recovery.
+            // Two distinct stuck classes the watchdog handles:
+            //
+            // A. USB-bus loss: the AMIRA dropped itself off the bus. We
+            //    can see this directly in sysfs; rebind brings it back.
+            //
+            // B. Firmware silence with finger still down: BTN_TOUCH was
+            //    last reported as 1 but events stopped flowing. The bus
+            //    is still bound (so check A misses it) and there's no
+            //    held-position phantom to detect (so PhantomGuard misses
+            //    it — no batches arrive at all). Distinguishing this
+            //    from "user lifted and went idle" requires the
+            //    last_btn_touch state: silence after BTN_TOUCH=0 is
+            //    normal (user idle), silence after BTN_TOUCH=1 is
+            //    stuck.
             let bus_lost = !touchpad_is_bound_to_bus();
-            if active_recently && silent && cooldown_ok && bus_lost {
+            let finger_was_down = last_btn_touch == Some(1);
+            // Third trigger: even with BTN_TOUCH last=0, an extended
+            // silence after recent activity is suspicious. Observed
+            // 2026-05-20: user lifts finger between motions, firmware
+            // stalls, the next touch-down is never delivered. The
+            // BTN_TOUCH=1 check from the second trigger misses this
+            // because the last value we saw was the lift. Cost: one
+            // false-positive rebind per idle period when user really
+            // does walk away — `tp_burst_since_rebind` resets to 0 on
+            // each rebind, gating future fires until real activity
+            // resumes.
+            let silent_long = silent_for.is_some_and(|d| d > Duration::from_secs(8));
+            let trigger_reason = if active_recently && silent && cooldown_ok && bus_lost {
+                Some("USB device off the bus")
+            } else if active_recently && silent && cooldown_ok && finger_was_down {
+                Some("BTN_TOUCH=1 last seen, no events since")
+            } else if active_recently && silent_long && cooldown_ok {
+                Some("extended silence after recent activity")
+            } else {
+                None
+            };
+            if let Some(reason) = trigger_reason {
                 eprintln!(
                     "trackpad-guard: wedge watchdog — touchpad silent for \
-                     {:?} after {} batches AND USB device off the bus, \
-                     forcing rebind",
-                    silent_for, tp_burst_since_rebind,
+                     {:?} after {} batches ({}), forcing rebind",
+                    silent_for, tp_burst_since_rebind, reason,
                 );
                 rebind_touchpad_usb();
                 last_rebind = Instant::now();
                 tp_burst_since_rebind = 0;
+                phantom_guard.reset();
+                last_btn_touch = None;
             }
         }
 
@@ -648,6 +909,18 @@ fn main() {
                 hb_tp += 1;
                 last_tp_event = Some(at);
                 tp_burst_since_rebind = tp_burst_since_rebind.saturating_add(1);
+                // Track the latest BTN_TOUCH value so the wedge watchdog
+                // can tell "finger was down when events stopped" apart
+                // from "user lifted and went idle." Scanning every batch
+                // adds negligible cost — we already iterate events in
+                // phantom_guard.observe().
+                for ev in &events {
+                    if let EventSummary::Key(_, code, value) = ev.destructure() {
+                        if code == KeyCode::BTN_TOUCH && (value == 0 || value == 1) {
+                            last_btn_touch = Some(value);
+                        }
+                    }
+                }
                 // Compare the touchpad event's arrival time against the
                 // last keyboard event's arrival time, NOT against now.
                 // This stays correct even if the main loop is processing
@@ -675,14 +948,71 @@ fn main() {
                     was_forwarding = true;
                 }
 
+                // Always run the phantom detector so its stationary
+                // window stays accurate, but only ACT on its verdict when
+                // the typing gate is open — a typing-gated batch is
+                // already being dropped, no need to also report it as
+                // phantom-suppressed.
+                let phantom_action = phantom_guard.observe(&events, at);
+
                 if typing {
                     dropped_batches += 1;
                     hb_tp_drop += 1;
-                } else if let Err(e) = virt.emit(&events) {
-                    eprintln!("trackpad-guard: virtual emit failed: {e}");
                 } else {
-                    forwarded_batches += 1;
-                    hb_tp_fwd += 1;
+                    match phantom_action {
+                        PhantomAction::Forward => {
+                            if let Err(e) = virt.emit(&events) {
+                                eprintln!("trackpad-guard: virtual emit failed: {e}");
+                            } else {
+                                forwarded_batches += 1;
+                                hb_tp_fwd += 1;
+                            }
+                        }
+                        PhantomAction::Drop => {
+                            phantom_batches += 1;
+                            hb_tp_phantom += 1;
+                        }
+                        PhantomAction::EmitReleaseAndDrop => {
+                            eprintln!(
+                                "trackpad-guard: phantom contact detected — held ≥{:?} within {} units; \
+                                 synthesizing slot-0 release",
+                                PHANTOM_HOLD, PHANTOM_NOISE,
+                            );
+                            if let Err(e) = emit_phantom_release(&mut virt) {
+                                eprintln!(
+                                    "trackpad-guard: synthetic release emit failed: {e}"
+                                );
+                            }
+                            // The synthetic release fixes libinput's view
+                            // (finger up) but the AMIRA firmware doesn't
+                            // know we did that and keeps streaming events
+                            // on the stuck tracking ID. libinput won't
+                            // accept those as a new contact without a
+                            // fresh tracking ID from hardware. The only
+                            // way to clear the firmware-side stuck state
+                            // is a USB rebind — same primitive the wedge
+                            // watchdog uses, but triggered by phantom
+                            // detection rather than bus loss.
+                            if last_rebind.elapsed() > PHANTOM_REBIND_COOLDOWN {
+                                eprintln!(
+                                    "trackpad-guard: phantom contact — issuing USB rebind \
+                                     to clear firmware state"
+                                );
+                                rebind_touchpad_usb();
+                                last_rebind = Instant::now();
+                                tp_burst_since_rebind = 0;
+                                phantom_guard.reset();
+                            } else {
+                                eprintln!(
+                                    "trackpad-guard: phantom contact — rebind cooldown \
+                                     active ({:?} since last); only synthetic release applied",
+                                    last_rebind.elapsed(),
+                                );
+                            }
+                            phantom_batches += 1;
+                            hb_tp_phantom += 1;
+                        }
+                    }
                 }
             }
             Msg::ManualRebind => {
@@ -693,6 +1023,7 @@ fn main() {
                     rebind_touchpad_usb();
                     last_rebind = Instant::now();
                     tp_burst_since_rebind = 0;
+                    phantom_guard.reset();
                 }
             }
             Msg::KeyboardReaderDied => {
@@ -730,11 +1061,12 @@ fn main() {
         if elapsed >= HEARTBEAT && (hb_tp != 0 || hb_key != 0) {
             let last_key_ago = last_key_ts.map(|t| t.elapsed());
             eprintln!(
-                "trackpad-guard: hb {}s — tp_batches={} (fwd={} drop={}) key_batches={} last_key_ago={:?}",
+                "trackpad-guard: hb {}s — tp_batches={} (fwd={} drop={} phantom={}) key_batches={} last_key_ago={:?}",
                 elapsed.as_secs(),
                 hb_tp,
                 hb_tp_fwd,
                 hb_tp_drop,
+                hb_tp_phantom,
                 hb_key,
                 last_key_ago,
             );
@@ -742,12 +1074,13 @@ fn main() {
             hb_tp = 0;
             hb_tp_fwd = 0;
             hb_tp_drop = 0;
+            hb_tp_phantom = 0;
             hb_key = 0;
         }
     }
 
     eprintln!(
-        "trackpad-guard: exiting (forwarded {} batches, dropped {})",
-        forwarded_batches, dropped_batches
+        "trackpad-guard: exiting (forwarded {} batches, dropped {}, phantom-suppressed {})",
+        forwarded_batches, dropped_batches, phantom_batches
     );
 }

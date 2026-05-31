@@ -218,8 +218,10 @@ impl PhantomGuard {
 
         // Update reference position / stationary timer from any position
         // events in this batch.
-        if let (Some(x), Some(y)) = (new_x.or_else(|| self.ref_known.then_some(self.ref_x)),
-                                      new_y.or_else(|| self.ref_known.then_some(self.ref_y))) {
+        if let (Some(x), Some(y)) = (
+            new_x.or_else(|| self.ref_known.then_some(self.ref_x)),
+            new_y.or_else(|| self.ref_known.then_some(self.ref_y)),
+        ) {
             if !self.ref_known {
                 self.ref_x = x;
                 self.ref_y = y;
@@ -274,10 +276,149 @@ impl PhantomGuard {
 fn emit_phantom_release(virt: &mut VirtualDevice) -> std::io::Result<()> {
     let events = [
         InputEvent::new(EventType::ABSOLUTE.0, AbsoluteAxisCode::ABS_MT_SLOT.0, 0),
-        InputEvent::new(EventType::ABSOLUTE.0, AbsoluteAxisCode::ABS_MT_TRACKING_ID.0, -1),
+        InputEvent::new(
+            EventType::ABSOLUTE.0,
+            AbsoluteAxisCode::ABS_MT_TRACKING_ID.0,
+            -1,
+        ),
         InputEvent::new(EventType::KEY.0, KeyCode::BTN_TOUCH.0, 0),
         InputEvent::new(EventType::KEY.0, KeyCode::BTN_TOOL_FINGER.0, 0),
     ];
+    virt.emit(&events)
+}
+
+/// Maximum MT slots we model. The AMIRA reports far fewer (typically up
+/// to 5); we size generously and ignore any slot index at or above this.
+const MAX_SLOTS: usize = 16;
+
+/// A finger slot is treated as a "ghost" — and force-released — once it
+/// has held an open tracking id this long with no position update, *while
+/// at least one other slot is still actively moving*. The "other slot is
+/// moving" requirement is what makes this safe: it fires only in the exact
+/// situation that freezes the cursor — the system believes 2+ fingers are
+/// down (so it locks into scroll/gesture mode and stops moving the
+/// pointer) when really only one finger is present, because the AMIRA
+/// dropped a finger-up report (commonly when a Mod+digit workspace-switch
+/// chord collides with touch reporting). Real two-finger scrolls and
+/// pinches keep both slots updating, so neither goes stale. Tradeoff: a
+/// finger deliberately held perfectly still for >STALE_SLOT_TIMEOUT while
+/// the other moves a lot would be released early; that gesture is rare and
+/// a stuck cursor is never acceptable, so we err toward releasing.
+const STALE_SLOT_TIMEOUT: Duration = Duration::from_millis(1500);
+
+/// Tracks the MT slot state of the stream we forward to the virtual
+/// device, so we can spot a slot whose finger-up was lost and synthesize
+/// the missing release. Fed exclusively from forwarded batches, so it
+/// mirrors what libinput actually believes — including a lift we may have
+/// dropped inside the typing gate.
+struct SlotGuard {
+    /// Sticky "current slot" pointer, mirroring evdev MT protocol type B:
+    /// ABS_MT_SLOT only re-appears when it changes, so this persists across
+    /// batches.
+    current_slot: usize,
+    /// Per slot: Some(last_position_update) while the slot holds an open
+    /// tracking id; None when released or never touched.
+    active: [Option<Instant>; MAX_SLOTS],
+}
+
+impl SlotGuard {
+    fn new() -> Self {
+        Self {
+            current_slot: 0,
+            active: [None; MAX_SLOTS],
+        }
+    }
+
+    /// Drop all state — used after a USB rebind, since the post-rebind
+    /// device starts with a clean slot state and our model must not carry
+    /// pre-rebind ghosts forward.
+    fn reset(&mut self) {
+        self.current_slot = 0;
+        self.active = [None; MAX_SLOTS];
+    }
+
+    /// Record that we ourselves retired `slot` (synthetic release), so the
+    /// model stays consistent with what libinput now sees.
+    fn note_released(&mut self, slot: usize) {
+        if slot < MAX_SLOTS {
+            self.active[slot] = None;
+        }
+    }
+
+    /// Update the slot model from a forwarded batch and return any slots
+    /// that have gone stale and should be force-released. `now` is the
+    /// batch's kernel emit time.
+    fn observe(&mut self, batch: &[InputEvent], now: Instant) -> Vec<usize> {
+        for ev in batch {
+            if let EventSummary::AbsoluteAxis(_, code, value) = ev.destructure() {
+                if code == AbsoluteAxisCode::ABS_MT_SLOT {
+                    if value >= 0 && (value as usize) < MAX_SLOTS {
+                        self.current_slot = value as usize;
+                    }
+                } else if code == AbsoluteAxisCode::ABS_MT_TRACKING_ID {
+                    if self.current_slot < MAX_SLOTS {
+                        self.active[self.current_slot] = if value >= 0 { Some(now) } else { None };
+                    }
+                } else if (code == AbsoluteAxisCode::ABS_MT_POSITION_X
+                    || code == AbsoluteAxisCode::ABS_MT_POSITION_Y)
+                    && self.current_slot < MAX_SLOTS
+                    && self.active[self.current_slot].is_some()
+                {
+                    self.active[self.current_slot] = Some(now);
+                }
+            }
+        }
+
+        // Only act when at least one slot is still actively moving — that's
+        // the slot the user is trying to move the cursor with. Without a
+        // live slot there's no cursor being held hostage (a single held
+        // finger is PhantomGuard's job, not ours), so we never fire.
+        let any_fresh = self
+            .active
+            .iter()
+            .any(|s| s.is_some_and(|t| now.duration_since(t) <= STALE_SLOT_TIMEOUT));
+        if !any_fresh {
+            return Vec::new();
+        }
+        let mut stale = Vec::new();
+        for (i, s) in self.active.iter().enumerate() {
+            if s.is_some_and(|t| now.duration_since(t) > STALE_SLOT_TIMEOUT) {
+                stale.push(i);
+            }
+        }
+        stale
+    }
+}
+
+/// Force-release the given ghost MT slots in the virtual device, then
+/// restore the slot pointer to `restore_slot` (where the real stream left
+/// it) so the next forwarded batch — which only re-sends ABS_MT_SLOT when
+/// it changes — keeps routing to the live finger. BTN_TOUCH is left
+/// untouched: a real finger is still down, so the contact count drops from
+/// N to N-1, not to zero. All emitted in one SYN frame.
+fn emit_slot_releases(
+    virt: &mut VirtualDevice,
+    slots: &[usize],
+    restore_slot: usize,
+) -> std::io::Result<()> {
+    let mut events = Vec::with_capacity(slots.len() * 2 + 1);
+    for &s in slots {
+        events.push(InputEvent::new(
+            EventType::ABSOLUTE.0,
+            AbsoluteAxisCode::ABS_MT_SLOT.0,
+            s as i32,
+        ));
+        events.push(InputEvent::new(
+            EventType::ABSOLUTE.0,
+            AbsoluteAxisCode::ABS_MT_TRACKING_ID.0,
+            -1,
+        ));
+    }
+    events.push(InputEvent::new(
+        EventType::ABSOLUTE.0,
+        AbsoluteAxisCode::ABS_MT_SLOT.0,
+        restore_slot as i32,
+    ));
     virt.emit(&events)
 }
 
@@ -720,7 +861,9 @@ fn main() {
     let mut dropped_batches: u64 = 0;
     let mut forwarded_batches: u64 = 0;
     let mut phantom_batches: u64 = 0;
+    let mut slot_releases: u64 = 0;
     let mut phantom_guard = PhantomGuard::new();
+    let mut slot_guard = SlotGuard::new();
     // Initial state is "forwarding" — first batch with no recent key
     // stays in that state silently; first batch during typing logs the
     // transition.
@@ -736,6 +879,7 @@ fn main() {
     let mut hb_tp_fwd: u64 = 0;
     let mut hb_tp_drop: u64 = 0;
     let mut hb_tp_phantom: u64 = 0;
+    let mut hb_slot_rel: u64 = 0;
     let mut hb_key: u64 = 0;
     const HEARTBEAT: Duration = Duration::from_secs(5);
 
@@ -855,23 +999,24 @@ fn main() {
             //    stuck.
             let bus_lost = !touchpad_is_bound_to_bus();
             let finger_was_down = last_btn_touch == Some(1);
-            // Third trigger: even with BTN_TOUCH last=0, an extended
-            // silence after recent activity is suspicious. Observed
-            // 2026-05-20: user lifts finger between motions, firmware
-            // stalls, the next touch-down is never delivered. The
-            // BTN_TOUCH=1 check from the second trigger misses this
-            // because the last value we saw was the lift. Cost: one
-            // false-positive rebind per idle period when user really
-            // does walk away — `tp_burst_since_rebind` resets to 0 on
-            // each rebind, gating future fires until real activity
-            // resumes.
-            let silent_long = silent_for.is_some_and(|d| d > Duration::from_secs(8));
+            // Previously a third trigger ("extended silence after recent
+            // activity", silent_for > 8s) fired here as a catch-all when
+            // neither bus-loss nor BTN_TOUCH=1 was true. Removed
+            // 2026-05-27 after live captures showed it firing on every
+            // Mod+digit workspace-switch chord and producing only
+            // ENODEV/ENODEV sysfs cycles, then leaving the device in a
+            // permanently silent post-rebind state. Workspace-switch
+            // chords cause the AMIRA touchpad endpoint to go silent
+            // briefly; the kernel handles the natural reconnect via
+            // autobind + our TouchpadReaderDied rescan path. Forcing a
+            // sysfs unbind/bind on top of that races with the kernel
+            // and makes recovery worse, not better. Bus-loss and
+            // BTN_TOUCH=1 remain as triggers — those are distinct,
+            // legitimately-rebindable stuck classes.
             let trigger_reason = if active_recently && silent && cooldown_ok && bus_lost {
                 Some("USB device off the bus")
             } else if active_recently && silent && cooldown_ok && finger_was_down {
                 Some("BTN_TOUCH=1 last seen, no events since")
-            } else if active_recently && silent_long && cooldown_ok {
-                Some("extended silence after recent activity")
             } else {
                 None
             };
@@ -885,6 +1030,7 @@ fn main() {
                 last_rebind = Instant::now();
                 tp_burst_since_rebind = 0;
                 phantom_guard.reset();
+                slot_guard.reset();
                 last_btn_touch = None;
             }
         }
@@ -966,6 +1112,31 @@ fn main() {
                             } else {
                                 forwarded_batches += 1;
                                 hb_tp_fwd += 1;
+                                // Track MT slots in what we just forwarded.
+                                // If a slot's finger-up was lost — leaving
+                                // libinput stuck in multi-finger mode while
+                                // one finger keeps moving — synthesize the
+                                // missing release so the cursor unfreezes
+                                // immediately, no rebind, no blackout.
+                                let stale = slot_guard.observe(&events, at);
+                                if !stale.is_empty() {
+                                    eprintln!(
+                                        "trackpad-guard: ghost MT slot(s) {:?} held >{:?} \
+                                         while another finger moves — releasing stale contact(s)",
+                                        stale, STALE_SLOT_TIMEOUT,
+                                    );
+                                    let restore = slot_guard.current_slot;
+                                    if let Err(e) = emit_slot_releases(&mut virt, &stale, restore) {
+                                        eprintln!(
+                                            "trackpad-guard: ghost-slot release emit failed: {e}"
+                                        );
+                                    }
+                                    for s in &stale {
+                                        slot_guard.note_released(*s);
+                                    }
+                                    slot_releases += stale.len() as u64;
+                                    hb_slot_rel += stale.len() as u64;
+                                }
                             }
                         }
                         PhantomAction::Drop => {
@@ -979,10 +1150,11 @@ fn main() {
                                 PHANTOM_HOLD, PHANTOM_NOISE,
                             );
                             if let Err(e) = emit_phantom_release(&mut virt) {
-                                eprintln!(
-                                    "trackpad-guard: synthetic release emit failed: {e}"
-                                );
+                                eprintln!("trackpad-guard: synthetic release emit failed: {e}");
                             }
+                            // Keep the slot model in step: the phantom
+                            // release retires slot 0.
+                            slot_guard.note_released(0);
                             // The synthetic release fixes libinput's view
                             // (finger up) but the AMIRA firmware doesn't
                             // know we did that and keeps streaming events
@@ -1002,6 +1174,7 @@ fn main() {
                                 last_rebind = Instant::now();
                                 tp_burst_since_rebind = 0;
                                 phantom_guard.reset();
+                                slot_guard.reset();
                             } else {
                                 eprintln!(
                                     "trackpad-guard: phantom contact — rebind cooldown \
@@ -1024,6 +1197,7 @@ fn main() {
                     last_rebind = Instant::now();
                     tp_burst_since_rebind = 0;
                     phantom_guard.reset();
+                    slot_guard.reset();
                 }
             }
             Msg::KeyboardReaderDied => {
@@ -1061,12 +1235,13 @@ fn main() {
         if elapsed >= HEARTBEAT && (hb_tp != 0 || hb_key != 0) {
             let last_key_ago = last_key_ts.map(|t| t.elapsed());
             eprintln!(
-                "trackpad-guard: hb {}s — tp_batches={} (fwd={} drop={} phantom={}) key_batches={} last_key_ago={:?}",
+                "trackpad-guard: hb {}s — tp_batches={} (fwd={} drop={} phantom={} slotrel={}) key_batches={} last_key_ago={:?}",
                 elapsed.as_secs(),
                 hb_tp,
                 hb_tp_fwd,
                 hb_tp_drop,
                 hb_tp_phantom,
+                hb_slot_rel,
                 hb_key,
                 last_key_ago,
             );
@@ -1075,12 +1250,13 @@ fn main() {
             hb_tp_fwd = 0;
             hb_tp_drop = 0;
             hb_tp_phantom = 0;
+            hb_slot_rel = 0;
             hb_key = 0;
         }
     }
 
     eprintln!(
-        "trackpad-guard: exiting (forwarded {} batches, dropped {}, phantom-suppressed {})",
-        forwarded_batches, dropped_batches, phantom_batches
+        "trackpad-guard: exiting (forwarded {} batches, dropped {}, phantom-suppressed {}, ghost-slot releases {})",
+        forwarded_batches, dropped_batches, phantom_batches, slot_releases
     );
 }

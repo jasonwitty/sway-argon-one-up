@@ -29,7 +29,7 @@ CORE_PKGS=(
     bat eza fzf zoxide ugrep jq
     grim slurp wl-clipboard wf-recorder libnotify-bin
     xdg-desktop-portal-wlr
-    fonts-firacode
+    fonts-firacode fonts-noto-color-emoji fonts-noto-core
     thunar mpv imv file-roller galculator zathura
     blueman hwinfo neovim micro
     papirus-icon-theme libglib2.0-bin gsettings-desktop-schemas

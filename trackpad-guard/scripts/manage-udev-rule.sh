@@ -14,6 +14,18 @@
 # rebind is the reliable trigger; udevadm trigger alone often doesn't
 # cause libinput to detach/re-attach an already-open device.
 #
+# VOLATILE LOCATION (/run, not /etc): the removal half of this lifecycle
+# only runs on a *clean* stop (systemd ExecStopPost). A power loss, OOM
+# kill, or kernel panic takes the whole system down without running
+# ExecStopPost, so the rule would survive into the next boot as an
+# orphan — libinput keeps ignoring the real touchpad, and if the daemon
+# then fails to start (e.g. a dropped enable symlink after the dirty
+# boot) there is NO pointer at all. Catastrophic and hard to recover
+# without a TTY. Installing into /run/udev/rules.d (tmpfs, wiped every
+# boot) makes that impossible: any orphaned rule vanishes on reboot, so
+# the worst case degrades to "real touchpad works, our DWT layer is off"
+# instead of "no touchpad". udev reads /run/udev/rules.d natively.
+#
 # History: an earlier version only rebound product 8061 (the touchpad-
 # carrying interface). The 8060 product also exposes a "Mouse" interface
 # that matches our IGNORE rule by name. Without rebinding 8060, its
@@ -25,16 +37,23 @@
 set -eu
 
 RULE_SRC=/usr/local/lib/trackpad-guard/60-trackpad-guard-amira-ignore.rules
-RULE_DST=/etc/udev/rules.d/60-trackpad-guard-amira-ignore.rules
+RULE_DIR=/run/udev/rules.d
+RULE_DST=$RULE_DIR/60-trackpad-guard-amira-ignore.rules
+# Legacy persistent location (pre-2026-06-24). Always cleaned on remove
+# so an upgrade doesn't leave a stale persistent copy shadowing us — a
+# file of the same name in /etc has higher priority than /run.
+RULE_LEGACY=/etc/udev/rules.d/60-trackpad-guard-amira-ignore.rules
 AMIRA_VENDOR=6080
 
 action=${1:-}
 case "$action" in
     install)
+        rm -f "$RULE_LEGACY"
+        mkdir -p "$RULE_DIR"
         install -m 0644 "$RULE_SRC" "$RULE_DST"
         ;;
     remove)
-        rm -f "$RULE_DST"
+        rm -f "$RULE_DST" "$RULE_LEGACY"
         ;;
     *)
         echo "usage: $0 install|remove" >&2

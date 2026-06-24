@@ -514,6 +514,15 @@ success "argon-lid-monitor user service installed and enabled"
 info "Cleaning up old trackpad-guard udev rule (pre-split layout)..."
 sudo rm -f /etc/udev/rules.d/60-trackpad-guard-amira.rules
 
+# Upgrade path (pre-2026-06-24): the service-managed IGNORE rule used to
+# live in persistent /etc. If a prior install died uncleanly (e.g. power
+# loss) it could orphan that file there, hiding the real touchpad on the
+# next boot with no virtual replacement. The rule is now installed into
+# volatile /run by manage-udev-rule.sh; remove any persistent leftover so
+# it can't shadow the /run copy (same-name files in /etc win over /run).
+info "Removing legacy persistent trackpad-guard IGNORE rule (now /run-managed)..."
+sudo rm -f /etc/udev/rules.d/60-trackpad-guard-amira-ignore.rules
+
 info "Installing trackpad-guard permanent udev rule (uinput perms)..."
 sudo install -m 0644 "$REPO_DIR/trackpad-guard/udev/60-trackpad-guard-uinput.rules" \
     /etc/udev/rules.d/60-trackpad-guard-uinput.rules

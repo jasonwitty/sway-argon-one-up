@@ -1,4 +1,4 @@
-# Service-managed: this file is installed into /etc/udev/rules.d/ only
+# Service-managed: this file is installed into /run/udev/rules.d/ only
 # while trackpad-guard.service is running, and removed when it stops.
 # See trackpad-guard/scripts/manage-udev-rule.sh.
 #
@@ -9,6 +9,12 @@
 # replacement, so leaving this rule installed would mean the login
 # screen / a user who toggled the daemon off has no touchpad at all.
 # Hence the service-managed lifecycle.
+#
+# It lives in /run (tmpfs), NOT /etc: a clean stop removes it via
+# ExecStopPost, but a power loss / panic never runs ExecStopPost. A
+# persistent copy would then orphan into the next boot and strand the
+# user with no pointer. In /run it is wiped every boot, so an unclean
+# death degrades to "real touchpad works" rather than "no touchpad".
 
 # The AMIRA's mouse-class interface gets named "Mouse" under hid-generic
 # and "Touchpad" under hid-multitouch — catch both.

@@ -256,8 +256,8 @@ bindsym $mod+r mode "resize"
     bindsym $mod+Shift+g exec /usr/local/bin/trackpad-guard-toggle
     # Help overlay
     bindsym $mod+Shift+h exec ~/.local/bin/sway-help
-    # Brave browser
-    bindsym $mod+b exec /usr/bin/brave-browser-stable --enable-low-end-device-mode --process-per-site --disable-smooth-scrolling --disable-features=TabHoverCards --disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+    # Brave (Origin — debloated build; flags are RPi/Wayland perf tuning, still needed)
+    bindsym $mod+b exec /usr/bin/brave-origin --enable-low-end-device-mode --process-per-site --disable-smooth-scrolling --disable-features=TabHoverCards --disable-backgrounding-occluded-windows --disable-renderer-backgrounding
     # File manager
     bindsym $mod+n exec thunar
     # Calculator

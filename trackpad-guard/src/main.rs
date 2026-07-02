@@ -1154,7 +1154,7 @@ fn main() {
             // primary recovery, and a redundant second node can wait.
             if active_touchpads.len() < expected_touchpads {
                 let pointer_idle =
-                    last_tp_event.map_or(true, |t| t.elapsed() > Duration::from_millis(400));
+                    last_tp_event.is_none_or(|t| t.elapsed() > Duration::from_millis(400));
                 if pointer_idle {
                     let _ = try_acquire_missing(&mut active_touchpads, &tx);
                 }

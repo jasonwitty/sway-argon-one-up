@@ -483,6 +483,44 @@ fn note_tool(name: &str, flag: &mut bool, on: bool) {
     }
 }
 
+/// True if this batch CHANGES the contact count as libinput tracks it — in
+/// EITHER direction: a finger landing (BTN_TOUCH=1, BTN_TOOL_*=1, or a new MT
+/// slot via ABS_MT_TRACKING_ID>=0) or a finger lifting (BTN_TOUCH=0,
+/// BTN_TOOL_*=0, ABS_MT_TRACKING_ID=-1).
+///
+/// Such a batch MUST be forwarded even while the typing gate is dropping.
+/// The gate's job is palm protection — suppressing touch *motion* during
+/// typing — but a finger going down or up is not motion. Dropping a lift
+/// leaves libinput believing a finger is still down (count stuck one HIGH:
+/// one real finger reads as two — observed 2026-06-10). Dropping a landing
+/// leaves libinput never seeing the finger arrive (count stuck one LOW: two
+/// fingers read as one, one finger does nothing — observed 2026-06-17). Both
+/// are the same contact-count desync, opposite directions; forwarding any
+/// count-changing batch keeps the count honest while still dropping
+/// motion-only batches, so palm protection is unchanged. See
+/// notes/trackpad-guard-engineering-log.md.
+///
+/// Note: BTN_TOUCH / BTN_TOOL_* / ABS_MT_TRACKING_ID are emitted by the
+/// kernel only on a transition, so matching them (regardless of value)
+/// selects exactly the count-changing batches; pure-motion batches carry
+/// only ABS_MT_SLOT / ABS_MT_POSITION_* and stay droppable.
+fn batch_changes_contact(batch: &[InputEvent]) -> bool {
+    batch.iter().any(|ev| match ev.destructure() {
+        EventSummary::Key(_, code, _value) => {
+            code == KeyCode::BTN_TOUCH
+                || code == KeyCode::BTN_TOOL_FINGER
+                || code == KeyCode::BTN_TOOL_DOUBLETAP
+                || code == KeyCode::BTN_TOOL_TRIPLETAP
+                || code == KeyCode::BTN_TOOL_QUADTAP
+                || code == KeyCode::BTN_TOOL_QUINTTAP
+        }
+        EventSummary::AbsoluteAxis(_, code, _value) => {
+            code == AbsoluteAxisCode::ABS_MT_TRACKING_ID
+        }
+        _ => false,
+    })
+}
+
 /// Force-release the given ghost MT slots in the virtual device, then
 /// restore the slot pointer to `restore_slot` (where the real stream left
 /// it) so the next forwarded batch — which only re-sends ABS_MT_SLOT when
@@ -1195,8 +1233,31 @@ fn main() {
                 let phantom_action = phantom_guard.observe(&events, at);
 
                 if typing {
-                    dropped_batches += 1;
-                    hb_tp_drop += 1;
+                    // Palm protection drops touch *motion* while typing — but
+                    // never a finger landing or lifting. Forwarding any batch
+                    // that changes the contact count keeps libinput's count in
+                    // sync, so neither a lost lift (ghost finger, count too
+                    // high) nor a lost landing (missing finger, count too low)
+                    // can desync the gesture state (see batch_changes_contact).
+                    if batch_changes_contact(&events) {
+                        if let Err(e) = virt.emit(&events) {
+                            eprintln!(
+                                "trackpad-guard: virtual emit (gated contact-change) failed: {e}"
+                            );
+                        } else {
+                            forwarded_batches += 1;
+                            hb_tp_fwd += 1;
+                            // Keep the slot model consistent with what libinput
+                            // now sees. observe() records the landing or retires
+                            // the slot on a lift; any other stale slots it
+                            // reports are left for the next forwarded batch to
+                            // handle (we keep the gated path minimal).
+                            let _ = slot_guard.observe(&events, at);
+                        }
+                    } else {
+                        dropped_batches += 1;
+                        hb_tp_drop += 1;
+                    }
                 } else {
                     match phantom_action {
                         PhantomAction::Forward => {

@@ -319,6 +319,20 @@ struct SlotGuard {
     /// Per slot: Some(last_position_update) while the slot holds an open
     /// tracking id; None when released or never touched.
     active: [Option<Instant>; MAX_SLOTS],
+    // --- diagnostic-only state (libinput's view, from forwarded events) ---
+    // These do not drive recovery; they exist so a stuck-but-forwarding
+    // event (cursor frozen while fwd>0, slotrel=0) is debuggable from the
+    // log. The suspected uncaught variant is a dropped BTN_TOOL_* finger-up
+    // that leaves libinput believing 2+ fingers are down — invisible in the
+    // MT-slot model alone. See [[jason-not-confused]] 2026-06-02.
+    /// Last BTN_TOUCH value forwarded (Some(1)=contact, Some(0)=lifted).
+    btn_touch: Option<i32>,
+    /// BTN_TOOL_* finger-count flags as libinput currently sees them.
+    tool_finger: bool,
+    tool_doubletap: bool,
+    tool_tripletap: bool,
+    tool_quadtap: bool,
+    tool_quinttap: bool,
 }
 
 impl SlotGuard {
@@ -326,6 +340,12 @@ impl SlotGuard {
         Self {
             current_slot: 0,
             active: [None; MAX_SLOTS],
+            btn_touch: None,
+            tool_finger: false,
+            tool_doubletap: false,
+            tool_tripletap: false,
+            tool_quadtap: false,
+            tool_quinttap: false,
         }
     }
 
@@ -335,6 +355,47 @@ impl SlotGuard {
     fn reset(&mut self) {
         self.current_slot = 0;
         self.active = [None; MAX_SLOTS];
+        self.btn_touch = None;
+        self.tool_finger = false;
+        self.tool_doubletap = false;
+        self.tool_tripletap = false;
+        self.tool_quadtap = false;
+        self.tool_quinttap = false;
+    }
+
+    /// One-line snapshot of what libinput currently believes: active MT
+    /// slots (with how long since each was updated), the BTN_TOOL finger
+    /// count, and last BTN_TOUCH. Appended to the heartbeat so a frozen
+    /// window shows the finger-count state at the time.
+    fn diag_snapshot(&self, now: Instant) -> String {
+        let mut slots = String::new();
+        for (i, s) in self.active.iter().enumerate() {
+            if let Some(t) = s {
+                if !slots.is_empty() {
+                    slots.push(',');
+                }
+                slots.push_str(&format!("{}:{}ms", i, now.duration_since(*t).as_millis()));
+            }
+        }
+        if slots.is_empty() {
+            slots.push_str("none");
+        }
+        let mut tool = String::new();
+        for (on, ch) in [
+            (self.tool_finger, 'F'),
+            (self.tool_doubletap, 'D'),
+            (self.tool_tripletap, 'T'),
+            (self.tool_quadtap, 'Q'),
+            (self.tool_quinttap, '5'),
+        ] {
+            if on {
+                tool.push(ch);
+            }
+        }
+        if tool.is_empty() {
+            tool.push_str("none");
+        }
+        format!("slots=[{slots}] tool={tool} touch={:?}", self.btn_touch)
     }
 
     /// Record that we ourselves retired `slot` (synthetic release), so the
@@ -367,6 +428,25 @@ impl SlotGuard {
                     self.active[self.current_slot] = Some(now);
                 }
             }
+            // Diagnostic-only: track BTN_TOUCH + BTN_TOOL_* as libinput sees
+            // them and log every finger-count transition, so a dropped
+            // finger-up (the suspected uncaught freeze cause) is visible.
+            if let EventSummary::Key(_, code, value) = ev.destructure() {
+                let on = value != 0;
+                if code == KeyCode::BTN_TOUCH {
+                    self.btn_touch = Some(value);
+                } else if code == KeyCode::BTN_TOOL_FINGER {
+                    note_tool("BTN_TOOL_FINGER", &mut self.tool_finger, on);
+                } else if code == KeyCode::BTN_TOOL_DOUBLETAP {
+                    note_tool("BTN_TOOL_DOUBLETAP", &mut self.tool_doubletap, on);
+                } else if code == KeyCode::BTN_TOOL_TRIPLETAP {
+                    note_tool("BTN_TOOL_TRIPLETAP", &mut self.tool_tripletap, on);
+                } else if code == KeyCode::BTN_TOOL_QUADTAP {
+                    note_tool("BTN_TOOL_QUADTAP", &mut self.tool_quadtap, on);
+                } else if code == KeyCode::BTN_TOOL_QUINTTAP {
+                    note_tool("BTN_TOOL_QUINTTAP", &mut self.tool_quinttap, on);
+                }
+            }
         }
 
         // Only act when at least one slot is still actively moving — that's
@@ -388,6 +468,57 @@ impl SlotGuard {
         }
         stale
     }
+}
+
+/// Diagnostic helper: log a BTN_TOOL_* finger-count transition and update
+/// the tracked flag. Only fires on an actual change, so it stays quiet
+/// during steady state.
+fn note_tool(name: &str, flag: &mut bool, on: bool) {
+    if *flag != on {
+        eprintln!(
+            "trackpad-guard: [diag] {name} {} -> {}",
+            *flag as u8, on as u8
+        );
+        *flag = on;
+    }
+}
+
+/// True if this batch CHANGES the contact count as libinput tracks it — in
+/// EITHER direction: a finger landing (BTN_TOUCH=1, BTN_TOOL_*=1, or a new MT
+/// slot via ABS_MT_TRACKING_ID>=0) or a finger lifting (BTN_TOUCH=0,
+/// BTN_TOOL_*=0, ABS_MT_TRACKING_ID=-1).
+///
+/// Such a batch MUST be forwarded even while the typing gate is dropping.
+/// The gate's job is palm protection — suppressing touch *motion* during
+/// typing — but a finger going down or up is not motion. Dropping a lift
+/// leaves libinput believing a finger is still down (count stuck one HIGH:
+/// one real finger reads as two — observed 2026-06-10). Dropping a landing
+/// leaves libinput never seeing the finger arrive (count stuck one LOW: two
+/// fingers read as one, one finger does nothing — observed 2026-06-17). Both
+/// are the same contact-count desync, opposite directions; forwarding any
+/// count-changing batch keeps the count honest while still dropping
+/// motion-only batches, so palm protection is unchanged. See
+/// notes/trackpad-guard-engineering-log.md.
+///
+/// Note: BTN_TOUCH / BTN_TOOL_* / ABS_MT_TRACKING_ID are emitted by the
+/// kernel only on a transition, so matching them (regardless of value)
+/// selects exactly the count-changing batches; pure-motion batches carry
+/// only ABS_MT_SLOT / ABS_MT_POSITION_* and stay droppable.
+fn batch_changes_contact(batch: &[InputEvent]) -> bool {
+    batch.iter().any(|ev| match ev.destructure() {
+        EventSummary::Key(_, code, _value) => {
+            code == KeyCode::BTN_TOUCH
+                || code == KeyCode::BTN_TOOL_FINGER
+                || code == KeyCode::BTN_TOOL_DOUBLETAP
+                || code == KeyCode::BTN_TOOL_TRIPLETAP
+                || code == KeyCode::BTN_TOOL_QUADTAP
+                || code == KeyCode::BTN_TOOL_QUINTTAP
+        }
+        EventSummary::AbsoluteAxis(_, code, _value) => {
+            code == AbsoluteAxisCode::ABS_MT_TRACKING_ID
+        }
+        _ => false,
+    })
 }
 
 /// Force-release the given ghost MT slots in the virtual device, then
@@ -1102,8 +1233,31 @@ fn main() {
                 let phantom_action = phantom_guard.observe(&events, at);
 
                 if typing {
-                    dropped_batches += 1;
-                    hb_tp_drop += 1;
+                    // Palm protection drops touch *motion* while typing — but
+                    // never a finger landing or lifting. Forwarding any batch
+                    // that changes the contact count keeps libinput's count in
+                    // sync, so neither a lost lift (ghost finger, count too
+                    // high) nor a lost landing (missing finger, count too low)
+                    // can desync the gesture state (see batch_changes_contact).
+                    if batch_changes_contact(&events) {
+                        if let Err(e) = virt.emit(&events) {
+                            eprintln!(
+                                "trackpad-guard: virtual emit (gated contact-change) failed: {e}"
+                            );
+                        } else {
+                            forwarded_batches += 1;
+                            hb_tp_fwd += 1;
+                            // Keep the slot model consistent with what libinput
+                            // now sees. observe() records the landing or retires
+                            // the slot on a lift; any other stale slots it
+                            // reports are left for the next forwarded batch to
+                            // handle (we keep the gated path minimal).
+                            let _ = slot_guard.observe(&events, at);
+                        }
+                    } else {
+                        dropped_batches += 1;
+                        hb_tp_drop += 1;
+                    }
                 } else {
                     match phantom_action {
                         PhantomAction::Forward => {
@@ -1235,7 +1389,7 @@ fn main() {
         if elapsed >= HEARTBEAT && (hb_tp != 0 || hb_key != 0) {
             let last_key_ago = last_key_ts.map(|t| t.elapsed());
             eprintln!(
-                "trackpad-guard: hb {}s — tp_batches={} (fwd={} drop={} phantom={} slotrel={}) key_batches={} last_key_ago={:?}",
+                "trackpad-guard: hb {}s — tp_batches={} (fwd={} drop={} phantom={} slotrel={}) key_batches={} last_key_ago={:?} | {}",
                 elapsed.as_secs(),
                 hb_tp,
                 hb_tp_fwd,
@@ -1244,6 +1398,7 @@ fn main() {
                 hb_slot_rel,
                 hb_key,
                 last_key_ago,
+                slot_guard.diag_snapshot(Instant::now()),
             );
             hb_last = Instant::now();
             hb_tp = 0;

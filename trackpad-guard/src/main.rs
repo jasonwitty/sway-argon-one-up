@@ -1144,14 +1144,22 @@ fn main() {
         if next_watchdog <= now {
             next_watchdog = now + WATCHDOG_TICK;
 
-            // Opportunistic rescan: pick up any AMIRA touchpad that
-            // wasn't there at startup but is on the bus now. ONLY run
-            // when we're short of the expected count — enumerating
-            // /dev/input on every watchdog tick caused noticeable
-            // stalls in cursor motion because the main thread was busy
-            // opening/probing devices instead of forwarding events.
+            // Opportunistic rescan: pick up an AMIRA touchpad that wasn't
+            // there at startup (or was dropped by a rebind) but is on the bus
+            // now. ONLY when we're short of the expected count — enumerating
+            // /dev/input opens/probes devices on the main thread, which stalls
+            // event forwarding. Running it every tick while a finger is moving
+            // shows up as a ~1s cursor hitch (observed 2026-07-01 while short a
+            // reader for ~3 min after a phantom rebind). So skip the sweep
+            // while the pointer is in active use and defer it to a brief pause;
+            // the reader-death path (next_rescan, with backoff) still drives
+            // primary recovery, and a redundant second node can wait.
             if active_touchpads.len() < expected_touchpads {
-                let _ = try_acquire_missing(&mut active_touchpads, &tx);
+                let pointer_idle =
+                    last_tp_event.map_or(true, |t| t.elapsed() > Duration::from_millis(400));
+                if pointer_idle {
+                    let _ = try_acquire_missing(&mut active_touchpads, &tx);
+                }
             }
 
             let silent_for = last_tp_event.map(|t| t.elapsed());

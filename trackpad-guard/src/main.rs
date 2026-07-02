@@ -558,9 +558,7 @@ fn batch_changes_contact(batch: &[InputEvent]) -> bool {
                 || code == KeyCode::BTN_TOOL_QUADTAP
                 || code == KeyCode::BTN_TOOL_QUINTTAP
         }
-        EventSummary::AbsoluteAxis(_, code, _value) => {
-            code == AbsoluteAxisCode::ABS_MT_TRACKING_ID
-        }
+        EventSummary::AbsoluteAxis(_, code, _value) => code == AbsoluteAxisCode::ABS_MT_TRACKING_ID,
         _ => false,
     })
 }

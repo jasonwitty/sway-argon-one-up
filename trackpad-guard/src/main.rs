@@ -306,6 +306,18 @@ const MAX_SLOTS: usize = 16;
 /// a stuck cursor is never acceptable, so we err toward releasing.
 const STALE_SLOT_TIMEOUT: Duration = Duration::from_millis(1500);
 
+/// A slot left open while our forwarded view says nothing is touching
+/// (BTN_TOUCH=0 and no BTN_TOOL_* set) for longer than this is a "lifted
+/// ghost": the finger came up but its ABS_MT_TRACKING_ID=-1 release was
+/// lost, so libinput still holds the contact and freezes the pointer with
+/// no further events arriving. Unlike STALE_SLOT_TIMEOUT this needs no
+/// second moving slot — a LONE ghost after a lift is the exact case (#13)
+/// that PhantomGuard can't see (it requires an active contact). Checked on
+/// the watchdog tick so an idle ghost still clears. Short, because once the
+/// pad reports no contact any surviving slot is unambiguously wrong; the
+/// small grace only avoids racing a lift whose release lands a beat later.
+const LIFTED_GHOST_TIMEOUT: Duration = Duration::from_millis(500);
+
 /// Tracks the MT slot state of the stream we forward to the virtual
 /// device, so we can spot a slot whose finger-up was lost and synthesize
 /// the missing release. Fed exclusively from forwarded batches, so it
@@ -319,12 +331,12 @@ struct SlotGuard {
     /// Per slot: Some(last_position_update) while the slot holds an open
     /// tracking id; None when released or never touched.
     active: [Option<Instant>; MAX_SLOTS],
-    // --- diagnostic-only state (libinput's view, from forwarded events) ---
-    // These do not drive recovery; they exist so a stuck-but-forwarding
-    // event (cursor frozen while fwd>0, slotrel=0) is debuggable from the
-    // log. The suspected uncaught variant is a dropped BTN_TOOL_* finger-up
-    // that leaves libinput believing 2+ fingers are down — invisible in the
-    // MT-slot model alone. See [[jason-not-confused]] 2026-06-02.
+    // --- contact-count state as libinput sees it (from forwarded events) ---
+    // Originally diagnostic-only; btn_touch + the tool_* flags now ALSO drive
+    // lifted_ghost_slots(): when they say "nothing touching" yet a slot is
+    // still open, that slot is a ghost to release. Still logged on every
+    // transition so a stuck-but-forwarding window (cursor frozen while fwd>0)
+    // stays debuggable. See notes/trackpad-guard-engineering-log.md.
     /// Last BTN_TOUCH value forwarded (Some(1)=contact, Some(0)=lifted).
     btn_touch: Option<i32>,
     /// BTN_TOOL_* finger-count flags as libinput currently sees them.
@@ -467,6 +479,38 @@ impl SlotGuard {
             }
         }
         stale
+    }
+
+    /// Slots libinput still holds open while our forwarded view says nothing
+    /// is touching (BTN_TOUCH=0 and no BTN_TOOL_* set) and the slot has been
+    /// silent longer than `grace`. These are "lifted ghosts": the finger-up's
+    /// ABS_MT_TRACKING_ID=-1 was lost, so libinput freezes the pointer while
+    /// zero further events arrive. Distinct from observe()'s stale path,
+    /// which needs a second moving slot; this fires on a LONE ghost. Meant to
+    /// be polled from the watchdog. A synthetic release (emit_slot_releases)
+    /// resyncs libinput; no USB rebind is needed because the firmware already
+    /// believes the finger is up (it sent BTN_TOUCH=0) and isn't streaming.
+    fn lifted_ghost_slots(&self, now: Instant, grace: Duration) -> Vec<usize> {
+        // Only when the forwarded contact count is unambiguously zero.
+        if self.btn_touch != Some(0) {
+            return Vec::new();
+        }
+        if self.tool_finger
+            || self.tool_doubletap
+            || self.tool_tripletap
+            || self.tool_quadtap
+            || self.tool_quinttap
+        {
+            return Vec::new();
+        }
+        self.active
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| match s {
+                Some(t) if now.duration_since(*t) > grace => Some(i),
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -1163,6 +1207,33 @@ fn main() {
                 phantom_guard.reset();
                 slot_guard.reset();
                 last_btn_touch = None;
+            }
+
+            // Lifted-ghost recovery: libinput still holds an MT slot open
+            // while our forwarded view says nothing is touching (BTN_TOUCH=0,
+            // no BTN_TOOL_*). The finger-up's ABS_MT_TRACKING_ID=-1 was lost,
+            // so the pointer stays frozen with no further events — the wedge
+            // triggers above (bus-loss / finger-down) and PhantomGuard all
+            // miss it. Synthesize the missing release; no rebind, the firmware
+            // already thinks the finger is up. Timer-driven here so an idle
+            // ghost (observed holding for minutes) still clears. (#13)
+            let ghosts = slot_guard.lifted_ghost_slots(now, LIFTED_GHOST_TIMEOUT);
+            if !ghosts.is_empty() {
+                eprintln!(
+                    "trackpad-guard: lifted ghost MT slot(s) {:?} open while \
+                     BTN_TOUCH=0/tool=none — synthesizing release",
+                    ghosts,
+                );
+                let restore = slot_guard.current_slot;
+                if let Err(e) = emit_slot_releases(&mut virt, &ghosts, restore) {
+                    eprintln!("trackpad-guard: lifted-ghost release emit failed: {e}");
+                } else {
+                    for s in &ghosts {
+                        slot_guard.note_released(*s);
+                    }
+                    slot_releases += ghosts.len() as u64;
+                    hb_slot_rel += ghosts.len() as u64;
+                }
             }
         }
 

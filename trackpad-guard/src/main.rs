@@ -1223,6 +1223,9 @@ fn main() {
     // real activity, and a stray rebind on an idle machine costs nothing
     // visible, so the presence check is gone.
     let mut last_tp_event: Option<Instant> = None;
+    // Mid-motion stall instrumentation (see STALL_LOG_SILENCE below).
+    let mut motion_run: u32 = 0;
+    let mut stall_logged = false;
     let mut tp_burst_since_rebind: u32 = 0;
     // Last observed BTN_TOUCH value from the real touchpad. None until
     // we see a key transition. Used by the wedge watchdog to distinguish
@@ -1292,6 +1295,34 @@ fn main() {
                 if pointer_idle {
                     let _ = try_acquire_missing(&mut active_touchpads, &tx);
                 }
+            }
+
+            // Mid-motion stall detector — LOG ONLY, no recovery action. The
+            // 2026-08-03 freeze was: pad reports a FALSE lift (BTN_TOUCH=0)
+            // mid-motion, then goes totally mute for 4.27s while the finger is
+            // still down, then resumes with a fresh contact. Every existing
+            // guard misses it by design — the wedge watchdog treats silence
+            // after BTN_TOUCH=0 as "user went idle", the bus stays bound, and
+            // no batches arrive for PhantomGuard to judge. Do NOT wire a rebind
+            // to this: an "extended silence" rebind trigger existed and was
+            // removed 2026-05-27 because it fired on every Mod+digit chord and
+            // left the device permanently mute afterwards. This line exists to
+            // MEASURE the class (how often, how long, what preceded it) so the
+            // next fix is chosen on evidence rather than guessed at.
+            const STALL_LOG_SILENCE: Duration = Duration::from_millis(800);
+            const STALL_LOG_MIN_RUN: u32 = 20;
+            if !stall_logged
+                && motion_run >= STALL_LOG_MIN_RUN
+                && last_tp_event.is_some_and(|t| t.elapsed() > STALL_LOG_SILENCE)
+            {
+                eprintln!(
+                    "trackpad-guard: real stream went silent mid-motion after {} batches \
+                     — last BTN_TOUCH={:?} | {}",
+                    motion_run,
+                    last_btn_touch,
+                    slot_guard.diag_snapshot(now)
+                );
+                stall_logged = true;
             }
 
             let silent_for = last_tp_event.map(|t| t.elapsed());
@@ -1395,6 +1426,30 @@ fn main() {
             }
             Msg::TouchpadEvents { events, at } => {
                 hb_tp += 1;
+                // A batch arriving while we had flagged a mid-motion stall means
+                // the pad resumed on its own. Log the recovered duration: paired
+                // with the stall line this is the only proof of how long the
+                // device was mute, and it distinguishes "pad went quiet" from
+                // "our reader stalled" — the real node is EVIOCGRABbed so an
+                // external capture can never see that difference (2026-08-03).
+                if stall_logged {
+                    if let Some(prev) = last_tp_event {
+                        eprintln!(
+                            "trackpad-guard: real stream RESUMED after {:?} of silence \
+                             (daemon was alive throughout — the pad was mute, not us)",
+                            prev.elapsed()
+                        );
+                    }
+                    stall_logged = false;
+                }
+                // Consecutive-batch run length, used to tell a stall that
+                // interrupts active motion from the user simply stopping.
+                match last_tp_event {
+                    Some(prev) if at.duration_since(prev) < Duration::from_millis(300) => {
+                        motion_run = motion_run.saturating_add(1)
+                    }
+                    _ => motion_run = 1,
+                }
                 last_tp_event = Some(at);
                 tp_burst_since_rebind = tp_burst_since_rebind.saturating_add(1);
                 // Track the latest BTN_TOUCH value so the wedge watchdog

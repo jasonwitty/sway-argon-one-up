@@ -29,7 +29,7 @@ use evdev::{
     uinput::VirtualDevice, AbsoluteAxisCode, Device, EventSummary, EventType, InputEvent, KeyCode,
     UinputAbsSetup,
 };
-use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM, SIGUSR1};
+use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM, SIGUSR1, SIGUSR2};
 use signal_hook::iterator::Signals;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
@@ -418,6 +418,35 @@ impl SlotGuard {
         }
     }
 
+    /// Slots we currently believe libinput holds open.
+    fn open_slots(&self) -> Vec<usize> {
+        self.active
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.map(|_| i))
+            .collect()
+    }
+
+    /// Record that we forced the contact count to zero (SIGUSR2 resync frame 1).
+    fn note_all_lifted(&mut self) {
+        self.btn_touch = Some(0);
+        self.tool_finger = false;
+        self.tool_doubletap = false;
+        self.tool_tripletap = false;
+        self.tool_quadtap = false;
+        self.tool_quinttap = false;
+    }
+
+    /// Record that we synthesized a single fresh contact on `slot` (SIGUSR2
+    /// resync frame 2), so the model matches what libinput was just told.
+    fn note_landed(&mut self, slot: usize, now: Instant) {
+        if slot < MAX_SLOTS {
+            self.active[slot] = Some(now);
+        }
+        self.btn_touch = Some(1);
+        self.tool_finger = true;
+    }
+
     /// Update the slot model from a forwarded batch and return any slots
     /// that have gone stale and should be force-released. `now` is the
     /// batch's kernel emit time.
@@ -595,6 +624,105 @@ fn emit_slot_releases(
     virt.emit(&events)
 }
 
+/// Tracking id used for a synthetic re-landing. Real ids come from the AMIRA
+/// firmware and are small sequential integers, so a high fixed value cannot
+/// collide with a live one. libinput only cares that the id is *different*
+/// from the one it just saw released.
+const RESYNC_TRACKING_ID: i32 = 0x4000;
+
+/// SIGUSR2 rescue: force libinput's contact state back in sync with reality
+/// WITHOUT touching USB (no unbind/rebind, so nothing can hang and the pointer
+/// can never disappear — the failure mode SIGUSR1 risks).
+///
+/// Two frames:
+///   1. Release every slot we believe open — plus slots 0 and 1 unconditionally,
+///      because the whole premise of this rescue is that our model and libinput
+///      DISAGREE, so "slots we believe open" may be exactly the wrong list. The
+///      AMIRA reports DOUBLETAP, so 0 and 1 are always in range; duplicate
+///      releases on an already-released slot are dropped by the input core.
+///      BTN_TOUCH and every BTN_TOOL_* go to 0, clearing any stuck finger count.
+///   2. If we believe a finger is still physically down, re-land exactly ONE
+///      contact with a FRESH tracking id. This second frame is the point of the
+///      whole thing: libinput ignores motion on a slot it considers released, so
+///      frame 1 alone would leave the held finger dead until the user lifted and
+///      re-landed — which is the workaround we're trying to replace. Re-landing
+///      one finger also directly corrects the suspected fault (libinput believing
+///      more contacts than exist). No position is sent: the kernel retains the
+///      slot's last position, and the next real motion batch updates it.
+///
+/// Deliberately re-lands ONE contact only. If two fingers really are down, the
+/// second one's motion is ignored until it lifts — acceptable for a manual
+/// rescue, and far safer than inventing contacts that aren't there.
+fn emit_contact_resync(
+    virt: &mut VirtualDevice,
+    slots: &mut SlotGuard,
+    now: Instant,
+) -> std::io::Result<Option<usize>> {
+    let mut release: Vec<usize> = (0..MAX_SLOTS)
+        .filter(|i| slots.active[*i].is_some())
+        .collect();
+    for s in [0usize, 1] {
+        if !release.contains(&s) {
+            release.push(s);
+        }
+    }
+
+    let mut frame = Vec::with_capacity(release.len() * 2 + 6);
+    for &s in &release {
+        frame.push(InputEvent::new(
+            EventType::ABSOLUTE.0,
+            AbsoluteAxisCode::ABS_MT_SLOT.0,
+            s as i32,
+        ));
+        frame.push(InputEvent::new(
+            EventType::ABSOLUTE.0,
+            AbsoluteAxisCode::ABS_MT_TRACKING_ID.0,
+            -1,
+        ));
+    }
+    frame.push(InputEvent::new(EventType::KEY.0, KeyCode::BTN_TOUCH.0, 0));
+    for code in [
+        KeyCode::BTN_TOOL_FINGER,
+        KeyCode::BTN_TOOL_DOUBLETAP,
+        KeyCode::BTN_TOOL_TRIPLETAP,
+        KeyCode::BTN_TOOL_QUADTAP,
+        KeyCode::BTN_TOOL_QUINTTAP,
+    ] {
+        frame.push(InputEvent::new(EventType::KEY.0, code.0, 0));
+    }
+    virt.emit(&frame)?;
+
+    // Did a finger appear to be down before we cleared everything? Use the
+    // slot the real stream is currently addressing so subsequent motion-only
+    // batches (which re-send ABS_MT_SLOT only when it changes) land on it.
+    let was_down = slots.btn_touch == Some(1) || !slots.open_slots().is_empty();
+    for s in &release {
+        slots.note_released(*s);
+    }
+    slots.note_all_lifted();
+
+    if !was_down {
+        return Ok(None);
+    }
+    let slot = slots.current_slot.min(MAX_SLOTS - 1);
+    virt.emit(&[
+        InputEvent::new(
+            EventType::ABSOLUTE.0,
+            AbsoluteAxisCode::ABS_MT_SLOT.0,
+            slot as i32,
+        ),
+        InputEvent::new(
+            EventType::ABSOLUTE.0,
+            AbsoluteAxisCode::ABS_MT_TRACKING_ID.0,
+            RESYNC_TRACKING_ID,
+        ),
+        InputEvent::new(EventType::KEY.0, KeyCode::BTN_TOUCH.0, 1),
+        InputEvent::new(EventType::KEY.0, KeyCode::BTN_TOOL_FINGER.0, 1),
+    ])?;
+    slots.note_landed(slot, now);
+    Ok(Some(slot))
+}
+
 enum Msg {
     /// A keyboard event batch arrived. The timestamp is captured in the
     /// reader thread the moment fetch_events() returns, so it reflects
@@ -620,6 +748,9 @@ enum Msg {
         path: PathBuf,
     },
     ManualRebind,
+    /// SIGUSR2: synthesize an "all contacts up" frame to the virtual device.
+    /// The light counterpart to ManualRebind — see emit_contact_resync().
+    ManualResync,
     Shutdown,
 }
 
@@ -925,13 +1056,16 @@ fn main() {
 
     {
         let tx = tx.clone();
-        let mut signals =
-            Signals::new([SIGUSR1, SIGTERM, SIGINT, SIGHUP]).expect("install signal handler");
+        let mut signals = Signals::new([SIGUSR1, SIGUSR2, SIGTERM, SIGINT, SIGHUP])
+            .expect("install signal handler");
         thread::spawn(move || {
             for sig in signals.forever() {
                 match sig {
                     SIGUSR1 => {
                         let _ = tx.send(Msg::ManualRebind);
+                    }
+                    SIGUSR2 => {
+                        let _ = tx.send(Msg::ManualResync);
                     }
                     _ => {
                         let _ = tx.send(Msg::Shutdown);
@@ -1430,6 +1564,33 @@ fn main() {
                     phantom_guard.reset();
                     slot_guard.reset();
                 }
+            }
+            Msg::ManualResync => {
+                // Log the state we're rescuing FROM before we clobber it: this
+                // line is the whole experiment. If the cursor comes back the
+                // instant this fires, the freeze was libinput-side contact state
+                // (and we can then automate the trigger); if it does not, the
+                // fault is downstream of libinput and no amount of contact
+                // bookkeeping here will fix it.
+                let now = Instant::now();
+                eprintln!(
+                    "trackpad-guard: SIGUSR2 — contact resync requested | {}",
+                    slot_guard.diag_snapshot(now)
+                );
+                match emit_contact_resync(&mut virt, &mut slot_guard, now) {
+                    Ok(Some(slot)) => eprintln!(
+                        "trackpad-guard: contact resync emitted — all contacts released, \
+                         re-landed slot {slot} with fresh tracking id"
+                    ),
+                    Ok(None) => eprintln!(
+                        "trackpad-guard: contact resync emitted — all contacts released \
+                         (nothing appeared to be down, no re-land)"
+                    ),
+                    Err(e) => eprintln!("trackpad-guard: contact resync emit failed: {e}"),
+                }
+                // The re-landed contact is brand new; don't let the phantom
+                // detector judge it on the old stationary window.
+                phantom_guard.reset();
             }
             Msg::KeyboardReaderDied => {
                 keyboards_alive = keyboards_alive.saturating_sub(1);

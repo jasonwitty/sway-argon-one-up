@@ -661,6 +661,7 @@ $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
 $USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable --now trackpad-guard.service
 $USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable --now trackpad-guard.service
 $USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl kill -s SIGUSR1 trackpad-guard.service
+$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl kill -s SIGUSR2 trackpad-guard.service
 SUDOEOF
 sudo visudo -cf /etc/sudoers.d/lid-power
 success "Power management sudoers configured"

@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# bt-a2dp-guard — keep Bluetooth headsets in A2DP stereo, never mono HFP.
+#
+# THE BUG THIS EXISTS FOR (diagnosed 2026-08-03, Soundcore Space A40):
+# BlueZ sometimes fails to bring up the A2DP profile at connect time —
+#   bluetoothd: a2dp-sink profile connect failed for <MAC>: Device or resource busy
+# When that happens the device connects HFP-only and PipeWire enumerates ONLY
+# headset profiles: a2dp-sink is absent from EnumProfile entirely. So audio plays
+# at 16kHz MONO (codec msbc) with no stereo profile available to switch to, and
+# no amount of WirePlumber policy can fix it — you cannot select a profile that
+# was never enumerated. A plain disconnect/reconnect does NOT reliably clear it.
+#
+# The cure is to ask BlueZ to connect the A2DP sink profile explicitly over
+# D-Bus (ConnectProfile with the Audio Sink UUID); the a2dp-sink profiles then
+# appear and we select the best one. This is NOT the same problem as
+# WirePlumber's autoswitch-to-headset-profile (a mic-holding app flipping the
+# device to HFP) — that is already disabled in
+# ~/.config/wireplumber/wireplumber.conf.d/51-bluetooth-policy.conf. Both end in
+# mono, so check which one you have: if a2dp-sink is MISSING from the profile
+# list it is this bug; if it is present but inactive it is the policy one.
+#
+# Runs event-driven off BlueZ PropertiesChanged (with a periodic safety sweep),
+# so a device is corrected within a second or two of connecting.
+#
+#   bt-a2dp-guard run-watcher   # service mode (see systemd/bt-a2dp-guard.service)
+#   bt-a2dp-guard once          # fix every connected device right now
+#   bt-a2dp-guard status        # show each connected device's profile + codec
+
+set -u
+
+AUDIO_SINK_UUID="0000110b-0000-1000-8000-00805f9b34fb"
+# Best-first. SBC-XQ is a higher-bitrate SBC variant; on this hardware the buds
+# advertise only SBC and AAC endpoints (no LDAC), and AAC needs libfdk-aac2
+# which is not installed — so sbc_xq is the practical ceiling. Unknown-to-us
+# codecs a future device offers still get picked up by the a2dp-sink fallback.
+PREFERRED_PROFILES=(a2dp-sink-sbc_xq a2dp-sink-ldac a2dp-sink-aac a2dp-sink)
+SWEEP_SECONDS=60
+
+log() { printf 'bt-a2dp-guard: %s\n' "$*"; }
+
+# MACs of currently connected devices, underscore form (as used in D-Bus paths).
+connected_macs() {
+  bluetoothctl devices Connected 2>/dev/null | awk '{print $2}' | tr ':' '_'
+}
+
+# The PipeWire device id for a bluez card, e.g. bluez_card.98_47_44_E6_02_64.
+pw_device_id() {
+  pw-dump 2>/dev/null | jq -r --arg n "bluez_card.$1" \
+    '.[] | select(.info.props."device.name" == $n) | .id' | head -1
+}
+
+# What the device is ACTUALLY doing, read from the output node's bluez props.
+# Do NOT use the device's Profile param: observed 2026-08-03 still reporting
+# "a2dp-sink-sbc_xq" while the sink was really on headset-head-unit/msbc, which
+# made an earlier version of this script conclude all was well and do nothing.
+# The sink props ("a2dp-sink"/"headset-head-unit" + the codec) are truth.
+sink_state() { # -> "<profile> <codec>", or "none none"
+  local out
+  out="$(pw-dump 2>/dev/null | jq -r --arg n "bluez_output.$1.1" \
+    '.[] | select(.info.props."node.name" == $n)
+     | "\(.info.props."api.bluez5.profile" // "none") \(.info.props."api.bluez5.codec" // "none")"' | head -1)"
+  printf '%s\n' "${out:-none none}"
+}
+
+# "<index> <name>" per available profile.
+pw_profiles() {
+  pw-dump 2>/dev/null | jq -r --arg n "bluez_card.$1" \
+    '.[] | select(.info.props."device.name" == $n)
+     | .info.params.EnumProfile[]? | select(.available == "yes") | "\(.index) \(.name)"'
+}
+
+# Bring one device to the best available A2DP profile. Idempotent and quiet
+# when nothing needs doing, so the periodic sweep costs nothing in logs.
+fix_device() {
+  local mac_u="$1"
+  local state active codec
+  state="$(sink_state "$mac_u")"
+  active="${state% *}"
+  codec="${state#* }"
+  # Already stereo. We do not chase a "better" codec once on A2DP — switching
+  # profiles interrupts playback, and the codec on offer is whatever the device
+  # negotiated. Only mono/absent A2DP is worth acting on.
+  case "$active" in
+    a2dp*) return 0 ;;
+  esac
+  log "$mac_u: on $active (codec $codec) — restoring A2DP stereo"
+
+  local profiles; profiles="$(pw_profiles "$mac_u")"
+  if ! grep -q 'a2dp-sink' <<<"$profiles"; then
+    # The BlueZ-level failure: no A2DP profile exists to select. Ask BlueZ to
+    # connect the A2DP sink profile, then re-read.
+    log "$mac_u: no a2dp-sink profile enumerated — asking BlueZ to connect A2DP"
+    busctl call org.bluez "/org/bluez/hci0/dev_$mac_u" org.bluez.Device1 \
+      ConnectProfile s "$AUDIO_SINK_UUID" >/dev/null 2>&1 \
+      || log "$mac_u: ConnectProfile call failed"
+    sleep 3
+    profiles="$(pw_profiles "$mac_u")"
+  fi
+
+  local want idx=""
+  for want in "${PREFERRED_PROFILES[@]}"; do
+    idx="$(awk -v w="$want" '$2 == w {print $1; exit}' <<<"$profiles")"
+    [[ -n $idx ]] && break
+  done
+  if [[ -z ${idx:-} ]]; then
+    log "$mac_u: still no A2DP profile available (active=$active) — leaving alone"
+    return 1
+  fi
+
+  local dev; dev="$(pw_device_id "$mac_u")"
+  if [[ -z ${dev:-} ]]; then
+    log "$mac_u: no PipeWire device found"
+    return 1
+  fi
+  if wpctl set-profile "$dev" "$idx" 2>/dev/null; then
+    sleep 1
+    log "$mac_u: set profile $want (was $active)"
+  else
+    log "$mac_u: wpctl set-profile $dev $idx failed"
+  fi
+}
+
+fix_all() {
+  local mac
+  for mac in $(connected_macs); do
+    fix_device "$mac"
+  done
+}
+
+case "${1:-status}" in
+once)
+  fix_all
+  ;;
+status)
+  for mac in $(connected_macs); do
+    state="$(sink_state "$mac")"
+    printf '%s  profile=%s  codec=%s\n' "$mac" "${state% *}" "${state#* }"
+  done
+  ;;
+run-watcher)
+  log "watching for Bluetooth connects (sweep every ${SWEEP_SECONDS}s)"
+  fix_all
+  # dbus-monitor emits a line containing "Connected" then a following "boolean
+  # true" line for each connect. Rather than parse that state machine, treat any
+  # bluez Device1 property change as a hint and re-run the (idempotent) fix —
+  # cheap, and immune to dbus-monitor formatting differences between versions.
+  while :; do
+    timeout "$SWEEP_SECONDS" dbus-monitor --system \
+      "type='signal',sender='org.bluez',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'" \
+      2>/dev/null | while read -r line; do
+        case "$line" in
+          *Connected*) sleep 2; fix_all ;;
+        esac
+      done
+    # timeout expiry is the periodic safety sweep; also covers a missed signal.
+    fix_all
+  done
+  ;;
+*)
+  echo "usage: bt-a2dp-guard {run-watcher|once|status}" >&2
+  exit 2
+  ;;
+esac

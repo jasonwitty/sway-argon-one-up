@@ -1,0 +1,14 @@
+[Unit]
+Description=Keep Bluetooth headsets in A2DP stereo (never mono HFP)
+# Needs pipewire/wireplumber up to read and set profiles.
+After=graphical-session.target pipewire.service wireplumber.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/bt-a2dp-guard run-watcher
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=graphical-session.target

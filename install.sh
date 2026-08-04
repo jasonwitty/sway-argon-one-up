@@ -420,6 +420,15 @@ chmod +x ~/.local/bin/*
 mkdir -p "$HOME/.config/systemd/user"
 if compgen -G "systemd/*.service" > /dev/null; then
     cp systemd/*.service "$HOME/.config/systemd/user/"
+    systemctl --user daemon-reload 2>/dev/null || true
+    # Keeps Bluetooth headsets in A2DP stereo. BlueZ intermittently fails its
+    # a2dp-sink connect ("Device or resource busy"), leaving the device HFP-only
+    # with no stereo profile enumerated at all — i.e. 16kHz mono with nothing for
+    # WirePlumber policy to select. This watcher forces A2DP back on connect.
+    systemctl --user enable bt-a2dp-guard.service 2>/dev/null || true
+    if systemctl --user is-active --quiet graphical-session.target 2>/dev/null; then
+        systemctl --user start bt-a2dp-guard.service 2>/dev/null || true
+    fi
 fi
 
 # mpv config — Pi 5 needs OpenGL via wayland-egl and the fast profile;

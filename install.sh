@@ -649,7 +649,12 @@ success "Services configured"
 
 # User groups
 info "Adding user to required groups..."
-sudo usermod -aG video,audio,input,render,i2c "$USER"
+# 'pipewire' matters more than it looks: /etc/security/limits.d/25-pw-rlimits.conf
+# grants rtprio 95 / memlock / nice to @pipewire ONLY. Without it PipeWire gets no
+# realtime scheduling at all (every thread SCHED_OTHER), and on a loaded Pi at
+# 1.5GHz that means audible clipping and dropouts — diagnosed 2026-08-03 on
+# Bluetooth audio. Being in 'audio' is NOT sufficient on Debian.
+sudo usermod -aG video,audio,input,render,i2c,pipewire "$USER"
 success "User groups updated"
 
 # Create standard XDG user directories (Desktop, Documents, Downloads, etc.)

@@ -29,11 +29,15 @@
 set -u
 
 AUDIO_SINK_UUID="0000110b-0000-1000-8000-00805f9b34fb"
-# Best-first. SBC-XQ is a higher-bitrate SBC variant; on this hardware the buds
-# advertise only SBC and AAC endpoints (no LDAC), and AAC needs libfdk-aac2
-# which is not installed — so sbc_xq is the practical ceiling. Unknown-to-us
-# codecs a future device offers still get picked up by the a2dp-sink fallback.
-PREFERRED_PROFILES=(a2dp-sink-sbc_xq a2dp-sink-ldac a2dp-sink-aac a2dp-sink)
+# Best-first, but plain SBC leads DELIBERATELY. SBC-XQ (~450-550kbps vs ~330)
+# sounded better yet clipped in and out on this hardware — twice, 2026-08-03,
+# with the phone's Bluetooth off, so it was not multipoint contention. Plain SBC
+# is still 48kHz stereo A2DP, which is the whole point of this script; chasing
+# the last bit of bitrate is not worth audible dropouts. If the RT-priority fix
+# (adding the user to the pipewire group) plus the deeper BT buffer makes XQ
+# stable, move a2dp-sink-sbc_xq back to the front. These buds advertise only SBC
+# and AAC endpoints — no LDAC — and AAC needs libfdk-aac2, which is not installed.
+PREFERRED_PROFILES=(a2dp-sink a2dp-sink-sbc_xq a2dp-sink-ldac a2dp-sink-aac)
 SWEEP_SECONDS=60
 
 log() { printf 'bt-a2dp-guard: %s\n' "$*"; }

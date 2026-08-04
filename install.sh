@@ -136,6 +136,7 @@ info "The following packages are optional. You will be asked about each one."
 info "All prompts happen now — nothing is installed until you confirm."
 
 INSTALL_BRAVE="n"
+INSTALL_WIDEVINE="n"
 INSTALL_CHROMIUM="n"
 INSTALL_WEBAPPS="n"
 INSTALL_FLATPAK="n"
@@ -146,6 +147,13 @@ prompt_yn "INSTALL_BRAVE" "Brave Browser" \
 blocking enabled by default. It supports vertical tabs for a clean, minimal
 look. This is the default browser for this setup and is fully integrated with
 the theme switcher — title bar and color scheme update live on every theme change."
+
+prompt_yn "INSTALL_WIDEVINE" "Widevine DRM (Netflix, etc.) for Brave" \
+    "Widevine is the DRM module streaming services like Netflix, Amazon Prime, and
+Spotify require. Brave on ARM ships DRM support but does not fetch the module on
+its own, so this installs the Raspberry Pi Widevine package and enables it in
+Brave. Requires the Brave option above. Playback tops out around 720p on Linux
+(a platform limitation, not a bug)."
 
 prompt_yn "INSTALL_CHROMIUM" "Chromium" \
     "Chromium carries the latest patches for Wayland screen sharing. If you need to
@@ -415,6 +423,17 @@ cp -r wallpapers ~/.wallpapers
 mkdir -p ~/.local/bin
 cp bin/* ~/.local/bin/
 chmod +x ~/.local/bin/*
+
+# Optional: Widevine DRM for Brave (installs the CDM + seeds the Brave profile)
+if [ "$INSTALL_WIDEVINE" = "y" ]; then
+    if [ "$INSTALL_BRAVE" != "y" ]; then
+        warn "Widevine was selected but Brave was not — skipping (Widevine needs Brave)."
+    else
+        info "Enabling Widevine DRM for Brave..."
+        "$HOME/.local/bin/enable-widevine"
+        success "Widevine DRM enabled for Brave"
+    fi
+fi
 
 # Systemd user units that aren't tied to a specific Rust crate
 mkdir -p "$HOME/.config/systemd/user"

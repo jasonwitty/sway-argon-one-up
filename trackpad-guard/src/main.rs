@@ -13,7 +13,7 @@
 //!    capabilities (vid:pid, keys, relative axes, properties).
 //! 4. Each event batch from the real touchpad is forwarded byte-for-byte
 //!    to the virtual device — UNLESS a keyboard event has been seen in
-//!    the last KEY_TYPING_WINDOW (150 ms), in which case the batch is
+//!    the last KEY_TYPING_WINDOW (200 ms), in which case the batch is
 //!    silently dropped.
 //!
 //! From sway/libinput's perspective there's only the virtual device,
@@ -59,7 +59,7 @@ const TOUCHPAD_USB_VENDOR_STR: &str = "6080";
 
 /// Touchpad events arriving within this window of the most recent
 /// keyboard event are dropped (typing → palm protection).
-const KEY_TYPING_WINDOW: Duration = Duration::from_millis(150);
+const KEY_TYPING_WINDOW: Duration = Duration::from_millis(200);
 
 const DISCOVER_INTERVAL: Duration = Duration::from_secs(2);
 

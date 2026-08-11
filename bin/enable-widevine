@@ -1,0 +1,106 @@
+#!/bin/bash
+# enable-widevine — enable Widevine DRM (Netflix, Spotify, Amazon, etc.) in Brave.
+#
+# Brave on ARM64 (Raspberry Pi) ships EME/DRM support compiled in, but does not
+# reliably fetch the Widevine CDM on its own. This installs the Raspberry Pi
+# Widevine package and seeds it into each Brave profile so DRM playback works
+# immediately. Brave's own component updater then upgrades the CDM to the latest
+# signed build automatically over time.
+#
+# Notes:
+#   * Safe to re-run (idempotent).
+#   * Brave must be CLOSED when you run this.
+#   * A manually-seeded CDM does NOT appear in brave://components — that page
+#     only lists updater-managed components. Absence there is normal, not a bug.
+#   * Expect up to ~720p on Linux (software / L3 Widevine); that is the platform
+#     ceiling, not a fault of this setup.
+
+set -euo pipefail
+
+RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; BLUE=$'\033[0;34m'; NC=$'\033[0m'
+info() { echo "${BLUE}::${NC} $*"; }
+ok()   { echo "${GREEN}OK${NC} $*"; }
+warn() { echo "${YELLOW}!!${NC} $*"; }
+err()  { echo "${RED}ERROR${NC} $*" >&2; }
+
+CDM_SRC=/opt/WidevineCdm
+CFG="$HOME/.config/BraveSoftware"
+
+# 1. Ensure the Widevine CDM is installed (Raspberry Pi's official, apt-provided).
+if [ ! -f "$CDM_SRC/manifest.json" ]; then
+    info "Installing Widevine CDM (libwidevinecdm0)..."
+    sudo apt-get update
+    sudo apt-get install -y libwidevinecdm0
+fi
+if [ ! -f "$CDM_SRC/manifest.json" ]; then
+    err "Widevine CDM not found at $CDM_SRC after install. Is the Raspberry Pi apt repo enabled?"
+    exit 1
+fi
+
+CDM_VER="$(jq -r '.version' "$CDM_SRC/manifest.json")"
+CDM_SO="$CDM_SRC/_platform_specific/linux_arm64/libwidevinecdm.so"
+if [ ! -f "$CDM_SO" ]; then
+    err "CDM library missing: $CDM_SO"
+    exit 1
+fi
+info "Widevine CDM version $CDM_VER"
+
+# 2. Refuse to run while Brave is open — seeding a live profile can be clobbered.
+if pgrep -f "/opt/brave.com/" >/dev/null 2>&1; then
+    warn "Brave is running. Close ALL Brave windows, then re-run: enable-widevine"
+    exit 1
+fi
+
+# 3. Seed the CDM + opt-in into a Brave profile directory.
+seed_profile() {
+    local base="$1" name="$2"
+
+    # Never downgrade: if Brave's component updater has already pulled a CDM
+    # newer than the apt one, seeding ours would plant an older version
+    # alongside it. Set the opt-in and leave the CDM alone.
+    local newest=""
+    if [ -d "$base/WidevineCdm" ]; then
+        # `|| true`: under `set -euo pipefail` a failing find would abort the script.
+        newest="$(find "$base/WidevineCdm" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' 2>/dev/null \
+            | sort -V | tail -1 || true)"
+    fi
+    if [ -n "$newest" ] && [ "$newest" != "$CDM_VER" ] \
+       && [ "$(printf '%s\n%s\n' "$newest" "$CDM_VER" | sort -V | tail -1)" = "$newest" ]; then
+        info "$name already has CDM $newest (newer than apt's $CDM_VER) — keeping it"
+    else
+        local dst="$base/WidevineCdm/$CDM_VER"
+        mkdir -p "$dst/_platform_specific/linux_arm64"
+        cp -f "$CDM_SRC/manifest.json" "$dst/manifest.json"
+        cp -f "$CDM_SO" "$dst/_platform_specific/linux_arm64/libwidevinecdm.so"
+    fi
+
+    # The opt-in is browser-global and lives under the "brave" object in
+    # "Local State" — as brave.widevine_opted_in, NOT at the top level.
+    local ls="$base/Local State"
+    if [ -f "$ls" ]; then
+        local tmp; tmp="$(mktemp)"
+        jq '.brave.widevine_opted_in = true' "$ls" > "$tmp" && mv "$tmp" "$ls"
+    else
+        printf '{"brave":{"widevine_opted_in":true}}\n' > "$ls"
+    fi
+    ok "Enabled Widevine for $name"
+}
+
+found=0
+for d in Brave-Origin Brave-Browser; do
+    if [ -d "$CFG/$d" ]; then
+        seed_profile "$CFG/$d" "$d"
+        found=1
+    fi
+done
+
+# If Brave has never been launched, pre-create the default (Brave-Origin) profile
+# so DRM works on first launch.
+if [ "$found" -eq 0 ]; then
+    mkdir -p "$CFG/Brave-Origin"
+    seed_profile "$CFG/Brave-Origin" "Brave-Origin (pre-created)"
+fi
+
+echo
+ok "Widevine enabled. Start Brave and play something DRM-protected (e.g. Netflix)."
+info "Reminder: won't show in brave://components; Brave auto-upgrades the CDM later."

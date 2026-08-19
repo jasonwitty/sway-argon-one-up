@@ -4,8 +4,10 @@
 # Set wallpaper
 output * bg /etc/greetd/wallpaper.png fill
 
-# Launch gtkgreet and exit sway when done
-exec "gtkgreet -l -c sway -s /etc/greetd/gtkgreet.css; swaymsg exit"
+# Launch gtkgreet and exit sway when done.
+# -c runs sway-session rather than bare sway so the session gets XDG_CURRENT_DESKTOP
+# and its log goes to `journalctl -t sway` (see greetd/sway-session.sh).
+exec "gtkgreet -l -c /usr/local/bin/sway-session -s /etc/greetd/gtkgreet.css; swaymsg exit"
 
 # Disable everything unnecessary
 xwayland disable

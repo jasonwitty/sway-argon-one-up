@@ -141,11 +141,13 @@ INSTALL_WEBAPPS="n"
 INSTALL_FLATPAK="n"
 INSTALL_CLAUDE="n"
 
-prompt_yn "INSTALL_BRAVE" "Brave Browser" \
-    "Brave is a privacy-focused open-source browser with built-in ad and tracker
-blocking enabled by default. It supports vertical tabs for a clean, minimal
-look. This is the default browser for this setup and is fully integrated with
-the theme switcher — title bar and color scheme update live on every theme change."
+prompt_yn "INSTALL_BRAVE" "Brave Origin" \
+    "Brave Origin is the debloated build of Brave: the same privacy-focused engine
+with built-in ad and tracker blocking, but with Rewards, Wallet, VPN, Leo AI, News,
+Talk, Tor and other extras stripped out (free on Linux, arm64 supported). It supports
+vertical tabs for a clean, minimal look. This is the default browser for this setup
+and is fully integrated with the theme switcher — title bar and color scheme update
+live on every theme change."
 
 prompt_yn "INSTALL_CHROMIUM" "Chromium" \
     "Chromium carries the latest patches for Wayland screen sharing. If you need to
@@ -218,11 +220,16 @@ if [ "$INSTALL_CHROMIUM" = "y" ]; then
     success "Chromium installed"
 fi
 
-# Optional: Brave
+# Optional: Brave Origin (debloated Brave; same apt repo, arm64 supported)
 if [ "$INSTALL_BRAVE" = "y" ]; then
-    info "Installing Brave browser..."
-    curl -fsS https://dl.brave.com/install.sh | sh
-    success "Brave installed"
+    info "Installing Brave Origin..."
+    sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+        https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+        | sudo tee /etc/apt/sources.list.d/brave-browser-release.list >/dev/null
+    sudo apt update
+    sudo apt install -y brave-origin
+    success "Brave Origin installed"
 fi
 
 # Optional: WebApps
@@ -795,7 +802,7 @@ echo "  Mod+Enter     Terminal"
 echo "  Mod+D         App launcher"
 echo "  Mod+T         Theme picker"
 echo "  Mod+N         File manager"
-echo "  Mod+B         Brave browser"
+echo "  Mod+B         Brave (Origin)"
 echo "  Mod+C         Claude Code"
 echo "  Mod+=         Calculator"
 echo "  Mod+Shift+H   Keybinding help"

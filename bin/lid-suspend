@@ -56,16 +56,34 @@ case "$1" in
         log "display: on"
 
         # Pick governor based on AC state so we don't clobber what
-        # argon-battery-rs would set. CW2217 register 0x0E high byte:
-        # bit 7 set = discharging (battery), clear = charging (AC).
-        # Defaults to ondemand if the read fails.
+        # argon-battery-rs would set. Defaults to ondemand when the power state
+        # can't be determined -- never pin the CPU to powersave on a bad read.
+        #
+        # Ask argon-battery-rs rather than reading the CW2217 directly: it knows
+        # when the IC is asleep or its profile flag is clear (in which case
+        # every register reads garbage) and reports "unknown" instead of a
+        # plausible-looking lie. A raw `i2cget 0x0e` returns 0xff on a failed
+        # read, and 0xff has bit 7 set -- indistinguishable from "discharging".
+        # That is exactly what happened on 2026-08-05: a resume on AC pinned the
+        # machine to powersave because the gauge was returning 0xff.
         governor="ondemand"
-        current_high=$(i2cget -y 1 0x64 0x0e 2>/dev/null)
-        if [ -n "$current_high" ] && (( (current_high & 0x80) != 0 )); then
-            governor="powersave"
-        fi
+        battery_class=$(/usr/local/bin/argon-battery-rs 2>/dev/null |
+            grep -o '"class": *"[^"]*"' | cut -d'"' -f4)
+        case "$battery_class" in
+            charging)                        governor="ondemand" ;;
+            good|moderate|warning|critical)  governor="powersave" ;;
+            *)
+                # argon-battery-rs missing or unparseable -- fall back to the
+                # raw register, still treating an all-ones read as unknown.
+                current_high=$(i2cget -y 1 0x64 0x0e 2>/dev/null)
+                if [ -n "$current_high" ] && [ "$current_high" != "0xff" ] &&
+                   (( (current_high & 0x80) != 0 )); then
+                    governor="powersave"
+                fi
+                ;;
+        esac
         echo "$governor" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
-        log "cpu governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor) (ac_reg=${current_high:-?})"
+        log "cpu governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor) (battery_class=${battery_class:-?} ac_reg=${current_high:-n/a})"
 
         sudo rfkill unblock wifi
         sudo rfkill unblock bluetooth

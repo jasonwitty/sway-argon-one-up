@@ -106,6 +106,8 @@ All `HandleLidSwitch` values should be commented out or set to `ignore`. The saf
 
 Also make sure the powermenu does not include a Suspend option (`systemctl suspend` will black-screen).
 
+If a resume leaves the CPU stuck on `powersave` while you're plugged in, check `~/.local/state/lid-events.log` for the `battery_class=` field. `lid-suspend` asks `argon-battery-rs` for the power state because a raw `i2cget 0x0e` returns `0xff` when the fuel gauge is asleep, and `0xff` has bit 7 set — indistinguishable from "discharging". A `battery_class=unknown` means the gauge is recovering and the governor correctly defaults to `ondemand`.
+
 ## Waybar or wob missing after sway reload
 
 These use `exec_always` and should survive reloads. If they don't appear, check the processes:

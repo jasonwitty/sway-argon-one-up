@@ -1,0 +1,93 @@
+#!/bin/bash
+# The single power menu. Two entry points, one implementation:
+#   * power-button-guard runs this on a short press of the physical button
+#   * waybar's ⏻ module runs it on click (bin/powermenu is now a wrapper)
+#
+# It replaced the old unstyled `powermenu` so there is only one power UI to
+# theme, test, and keep in sync; Lock and Logout come from that menu.
+#
+# Suspend is NOT `systemctl suspend` -- the Pi 5 / CM5 cannot do real system
+# suspend and attempting it black-screens the machine (see Troubleshooting.md).
+# It runs bin/soft-suspend, the same subsystem-by-subsystem powerdown a lid
+# close performs.
+#
+# Uses wofi rather than swaynag so it can be themed: swaynag only takes flat
+# colors on the command line -- no CSS, no border radius, no Nerd Font -- and
+# looked nothing like the rest of the desktop. wofi shares its stylesheet
+# pipeline with waybar via switch-theme (see templates/wofi-style-power.css),
+# so this prompt re-themes automatically along with everything else.
+#
+# Entry colors are pango markup pulled from the live theme, matching waybar's
+# semantics: RED for the destructive action, PEACH for restart, SKY for
+# suspend, YELLOW for lock, MAUVE for logout, TEXT for the harmless one.
+
+set -u
+
+THEME_DIR="$HOME/.config/sway-themes"
+STYLE="$HOME/.config/wofi/style-power.css"
+CONF="$HOME/.config/wofi/power-config"
+
+# Pull the live palette so the glyph colors track the theme. Fall back to
+# readable defaults if the theme files are not where we expect -- an unstyled
+# prompt is still far better than no prompt on a power button press.
+RED="bf616a"
+PEACH="d08770"
+YELLOW="ebcb8b"
+SKY="88c0d0"
+MAUVE="b48ead"
+TEXT="eceff4"
+current=$(cat "$THEME_DIR/current" 2>/dev/null || echo "")
+if [ -n "$current" ] && [ -f "$THEME_DIR/$current" ]; then
+    # shellcheck disable=SC1090
+    . "$THEME_DIR/$current"
+fi
+
+# Power off stays first so a press-then-Enter on the physical button still does
+# the obvious thing. Cancel is last and Escape also dismisses.
+entries=$(printf '%s\n' \
+    "<span foreground=\"#${RED}\">⏻</span>  Power off" \
+    "<span foreground=\"#${PEACH}\">󰜉</span>  Restart" \
+    "<span foreground=\"#${SKY}\">󰒲</span>  Suspend" \
+    "<span foreground=\"#${YELLOW}\">󰌾</span>  Lock" \
+    "<span foreground=\"#${MAUVE}\">󰍃</span>  Logout" \
+    "<span foreground=\"#${TEXT}\">󰜺</span>  Cancel")
+
+style_args=()
+[ -f "$STYLE" ] && style_args=(--style "$STYLE")
+
+# Geometry comes from a dedicated config file rather than command-line flags:
+# wofi 1.4.1 gave the launcher config's `lines=` priority over --lines and
+# --height here, so the prompt was sized by the launcher's row count instead of
+# its own. See wofi/power-config for the row arithmetic -- and re-check it there
+# if you add or remove an entry below.
+#
+# Note wofi 1.4.1 emits a harmless "Gtk-CRITICAL gtk_widget_set_size_request"
+# on startup regardless of flags or stylesheet -- it is not caused by anything
+# here, and your other wofi menus emit it too.
+conf_args=()
+[ -f "$CONF" ] && conf_args=(--conf "$CONF")
+
+choice=$(printf '%s\n' "$entries" | wofi \
+    --dmenu \
+    --allow-markup \
+    --prompt "Power" \
+    --cache-file /dev/null \
+    "${conf_args[@]}" \
+    "${style_args[@]}")
+
+# Match on the trailing label so the markup/glyph can change freely.
+case "$choice" in
+    *"Power off") systemctl poweroff ;;
+    *"Restart") systemctl reboot ;;
+    # Not `systemctl suspend` -- that black-screens the Pi 5. This is the same
+    # subsystem-by-subsystem soft suspend a lid close performs, and it arms the
+    # power button as the wake trigger. See bin/soft-suspend.
+    *"Suspend") setsid "$(dirname "$(readlink -f "$0")")/soft-suspend" >/dev/null 2>&1 & ;;
+    # setsid so the lock screen leaves this script's process group. When
+    # power-button-guard opens the prompt it puts it in its own group and kills
+    # that whole group on a 4s force-off -- an attached swaylock would be torn
+    # down with it, briefly exposing the desktop while the machine shuts down.
+    *"Lock") setsid swaylock >/dev/null 2>&1 & ;;
+    *"Logout") swaymsg exit ;;
+    *) : ;;  # Cancel, Escape, or wofi dying -- do nothing.
+esac

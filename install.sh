@@ -490,6 +490,16 @@ else
     success "argon-fan built and installed"
 fi
 
+if [ -x /usr/local/bin/power-button-guard ]; then
+    success "power-button-guard already installed"
+else
+    info "Building power-button-guard..."
+    cd "$REPO_DIR/power-button-guard"
+    cargo build --release
+    sudo install -m 0755 target/release/power-button-guard /usr/local/bin/power-button-guard
+    success "power-button-guard built and installed"
+fi
+
 # Upgrade path: remove the old Python trackpad-guard and its exec line from sway.
 if [ -f "$HOME/.local/bin/trackpad-guard" ] && head -1 "$HOME/.local/bin/trackpad-guard" | grep -q python; then
     info "Removing old Python trackpad-guard (replaced by Rust version)..."
@@ -728,6 +738,19 @@ HandleLidSwitchExternalPower=ignore
 HandleLidSwitchDocked=ignore
 EOF
 success "Logind lid switch set to ignore"
+
+# Hand the power key to power-button-guard instead of powering off on a bare tap.
+# Shipped as a file rather than a heredoc so the comments explaining why
+# HandlePowerKeyLongPress stays as a backstop travel with it.
+info "Configuring logind power key override..."
+sudo install -m 0644 "$REPO_DIR/power-button-guard/logind.conf.d/10-power-button-guard.conf" \
+    /etc/systemd/logind.conf.d/10-power-button-guard.conf
+mkdir -p "$HOME/.config/systemd/user"
+cp "$REPO_DIR/power-button-guard/systemd/power-button-guard.service" \
+    "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload 2>/dev/null || true
+systemctl --user enable power-button-guard.service 2>/dev/null || true
+success "Power button confirm prompt installed"
 
 # Set fish as default shell
 info "Setting fish as default shell..."

@@ -1,0 +1,18 @@
+# wofi config for the power-button confirm prompt (bin/power-prompt).
+#
+# Separate from wofi/config on purpose. The launcher config sets lines=8 and no
+# height, so wofi sized the power prompt from the launcher's row count rather
+# than its own -- leaving a large empty gap below the last entry back when this
+# menu had three of them -- and --lines/--height on the command line did not
+# override it. Owning the geometry here also means the prompt keeps its shape if
+# the launcher config is ever retuned.
+width=320
+# wofi 1.4.1 sizes the window from `lines`, not `height` -- changing height
+# alone had no visible effect. `lines` counts the input row and needs one row of
+# slack on top of that, so the working value is (entries + 2): with 3 entries,
+# 5 fit exactly and 4 clipped the last one. Six entries therefore need 8.
+# Re-check this if you add or remove a menu entry.
+lines=8
+hide_scroll=true
+allow_markup=true
+prompt=Power

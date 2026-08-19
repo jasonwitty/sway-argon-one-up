@@ -70,7 +70,11 @@ exec swayidle -w \
 
 ### Power menu
 
-The power button in waybar opens a wofi menu (`bin/powermenu`) with Lock, Reboot, Shutdown, and Logout options. Suspend is intentionally excluded — the Pi 5 / CM5 does not support system suspend and attempting it will black-screen the system.
+The power button in waybar opens a themed wofi menu (`bin/power-prompt`) with Power off, Restart, Suspend, Lock, Logout, and Cancel options. The **physical** power button opens the same menu via the `power-button-guard` daemon, so there is one power UI regardless of how you reach it. (`bin/powermenu` is now just a compatibility wrapper around `power-prompt`.)
+
+**Suspend is not `systemctl suspend`** — that black-screens the Pi 5 / CM5, which cannot do real system suspend. The menu entry runs `bin/soft-suspend`, which performs the identical soft suspend a lid close does (lock, displays off, powersave governor, wifi/bluetooth rfkill'd, webcam unbound).
+
+Because a lid close is resumed by the lid GPIO's rising edge, a menu-initiated suspend has no such edge coming and would otherwise never wake. So `soft-suspend` drops a flag in `$XDG_RUNTIME_DIR/soft-suspended`, and `power-button-guard` treats the next short press of the physical power button as "resume" rather than "show the menu". `lid-suspend open` clears the flag, so waking by lid works too and both paths leave consistent state. The flag is on tmpfs, so a hard power-off can't strand the daemon in resume-only mode.
 
 ```bash
 #!/bin/bash

@@ -2,5 +2,7 @@
 vt = 7
 
 [default_session]
-command = "sway --config /etc/greetd/sway-config"
+# systemd-cat so greeter failures land in `journalctl -t greeter-sway` instead of only
+# on VT7, where they are invisible until something sets a mode on the framebuffer.
+command = "systemd-cat -t greeter-sway sway --config /etc/greetd/sway-config"
 user = "_greetd"

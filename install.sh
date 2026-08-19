@@ -443,6 +443,19 @@ cp -r gtk-themes/* ~/.themes/
 # Login screen
 sudo cp greetd/config.toml greetd/sway-config greetd/gtkgreet.css greetd/wallpaper.png /etc/greetd/
 
+# Session wrapper (gtkgreet -c) and the display guard used by greetd's ExecStartPre.
+# Both live in /usr/local/bin, not ~/.local/bin: greetd needs them as root and the paths
+# are baked into config files, so they must not depend on the username.
+sudo install -m 0755 greetd/sway-session.sh /usr/local/bin/sway-session
+sudo install -m 0755 greetd/greetd-wait-display.sh /usr/local/bin/greetd-wait-display
+
+# Drop-in that stops a fast-failing greeter (lid closed at boot -> no output) from
+# tripping greetd's start limit and killing the login screen for the whole boot.
+sudo mkdir -p /etc/systemd/system/greetd.service.d
+sudo install -m 0644 greetd/greetd-override.conf \
+    /etc/systemd/system/greetd.service.d/override.conf
+sudo systemctl daemon-reload
+
 success "Config files copied"
 
 # ---------------------------------------------------------------------------

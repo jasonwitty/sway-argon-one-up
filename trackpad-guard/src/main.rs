@@ -808,13 +808,13 @@ fn batch_landing_lift(batch: &[InputEvent]) -> (bool, bool) {
                     }
                 }
             }
-            EventSummary::AbsoluteAxis(_, code, value) => {
-                if code == AbsoluteAxisCode::ABS_MT_TRACKING_ID {
-                    if value >= 0 {
-                        landing = true;
-                    } else {
-                        lift = true;
-                    }
+            EventSummary::AbsoluteAxis(_, code, value)
+                if code == AbsoluteAxisCode::ABS_MT_TRACKING_ID =>
+            {
+                if value >= 0 {
+                    landing = true;
+                } else {
+                    lift = true;
                 }
             }
             _ => {}

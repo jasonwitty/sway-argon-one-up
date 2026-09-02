@@ -82,6 +82,13 @@ fn toggle_trackpad_guard() -> Result<(), String> {
     trackpad::toggle()
 }
 
+/// Typing-gate window in milliseconds. Named `level` to match the slider
+/// helper in dashboard.js, which sends every slider as `{ level }`.
+#[tauri::command]
+fn set_typing_gate(level: u16) -> Result<(), String> {
+    trackpad::set_typing_gate(level)
+}
+
 /// Detect whether we're running under a tiling window manager. Used to
 /// suppress our CSD titlebar — tiling WMs already manage window placement
 /// and the buttons just take up space.
@@ -155,6 +162,7 @@ fn main() {
             open_theme_picker,
             open_fan_picker,
             toggle_trackpad_guard,
+            set_typing_gate,
             set_brightness,
             set_volume
         ])

@@ -111,7 +111,8 @@ journalctl -fu trackpad-guard          # follow live
 ```
 
 The **first line of every run names the build**:
-`trackpad-guard: version 0.3.0 (git 1eebe8ec29e9)`.
+`trackpad-guard: version 0.3.0 (git <commit-hash>)` — the hash matches the
+commit you built from (`git rev-parse --short=12 HEAD`).
 
 While in use, a heartbeat line summarizes each ~5s window:
 

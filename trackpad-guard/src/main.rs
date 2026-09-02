@@ -1430,7 +1430,33 @@ fn rebind_touchpad_usb() {
     eprintln!("trackpad-guard: USB rebind complete");
 }
 
+/// Version + build identity: crate version plus the git commit embedded by
+/// build.rs ("-dirty" when the tree had uncommitted changes). Printed as the
+/// daemon's first log line and by `--version`, so a user-supplied journal
+/// names the exact build — a report against an unknown binary is close to
+/// worthless for an intermittent bug. Empty hash (built outside a git
+/// checkout) degrades to the crate version alone.
+fn version_string() -> String {
+    match option_env!("TRACKPAD_GUARD_GIT_HASH") {
+        Some(hash) if !hash.is_empty() => {
+            format!("{} (git {hash})", env!("CARGO_PKG_VERSION"))
+        }
+        _ => env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
 fn main() {
+    if let Some(arg) = std::env::args().nth(1) {
+        if arg == "--version" || arg == "-V" {
+            println!("trackpad-guard {}", version_string());
+            return;
+        }
+    }
+    // First line in the journal for every run, before discovery can block on
+    // a missing device — triage starts with knowing which build produced the
+    // log that follows.
+    eprintln!("trackpad-guard: version {}", version_string());
+
     let (tx, rx) = mpsc::channel::<Msg>();
 
     {
@@ -2284,6 +2310,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The startup line and --version must always carry the crate version,
+    /// with or without an embedded git hash.
+    #[test]
+    fn version_string_carries_the_crate_version() {
+        assert!(version_string().starts_with(env!("CARGO_PKG_VERSION")));
+    }
 
     #[test]
     fn reads_the_gate_value() {

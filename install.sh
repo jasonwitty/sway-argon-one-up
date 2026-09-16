@@ -386,6 +386,31 @@ else
     warn "Argon daemon service not running — will start on next boot"
 fi
 
+# Select the external Wi-Fi antenna.
+# The ONE UP shell wires its antenna to the CM5 U.FL connector, but a CM5
+# defaults to its onboard PCB antenna (ANT1) unless dtparam=ant2 is set.
+# Argon's argononeup.sh defines set_external_antenna() for this but never
+# calls it, so without this the laptop runs on the buried PCB antenna:
+# weak signal, ~1/3 of association attempts time out (status_code=16), and
+# far-away or guest networks are visible but never join. Takes effect on the
+# reboot at the end of the install.
+BOOT_CONFIG=/boot/firmware/config.txt
+# (tr strips the NUL terminator: some grep builds treat the file as binary and miss)
+if [ -f "$BOOT_CONFIG" ] && tr -d "\\0" < /proc/device-tree/model 2>/dev/null | grep -q "Compute Module 5"; then
+    if grep -qE "^[[:space:]]*dtparam=ant2([[:space:]]|$)" "$BOOT_CONFIG"; then
+        success "External Wi-Fi antenna already selected (dtparam=ant2)"
+    else
+        info "Selecting external Wi-Fi antenna (dtparam=ant2)..."
+        # Repeat the [all] header so the line applies regardless of which
+        # conditional section the file happens to end in.
+        printf "\n[all]\n# Argon ONE UP: use the shell antenna on the CM5 U.FL connector\ndtparam=ant2\n" \
+            | sudo tee -a "$BOOT_CONFIG" > /dev/null
+        success "External Wi-Fi antenna selected (active after reboot)"
+    fi
+else
+    warn "Not a CM5 or no $BOOT_CONFIG — skipping external antenna selection"
+fi
+
 # ---------------------------------------------------------------------------
 # Phase 8: Clone repo and copy configs
 # ---------------------------------------------------------------------------

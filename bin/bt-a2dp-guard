@@ -42,6 +42,22 @@ SWEEP_SECONDS=60
 
 log() { printf 'bt-a2dp-guard: %s\n' "$*"; }
 
+# Don't cycle a device's connection more than once per this window. A set of buds
+# that genuinely refuses A2DP would otherwise be disconnected and reconnected on
+# every sweep, which is worse than leaving it alone.
+RECONNECT_COOLDOWN=120
+
+# Marker lives in the runtime dir, so it is per-boot and needs no cleanup.
+reconnect_allowed() {
+  local marker="${XDG_RUNTIME_DIR:-/tmp}/bt-a2dp-guard.reconnect.$1"
+  if [[ -f $marker ]]; then
+    local age=$(( $(date +%s) - $(stat -c %Y "$marker" 2>/dev/null || echo 0) ))
+    ((age < RECONNECT_COOLDOWN)) && return 1
+  fi
+  : > "$marker"
+  return 0
+}
+
 # MACs of currently connected devices, underscore form (as used in D-Bus paths).
 connected_macs() {
   bluetoothctl devices Connected 2>/dev/null | awk '{print $2}' | tr ':' '_'
@@ -99,6 +115,41 @@ fix_device() {
       || log "$mac_u: ConnectProfile call failed"
     sleep 3
     profiles="$(pw_profiles "$mac_u")"
+
+    # Escalation added 2026-08-27. ConnectProfile is itself refused when BlueZ
+    # reports the sink busy:
+    #   a2dp-sink profile connect failed for <MAC>: Device or resource busy
+    # observed with TWO pairings for the same physical earbuds (the A40 presents
+    # a different address depending on which bud is primary), where the other
+    # address's leftover state holds the A2DP resource. The old code logged
+    # "leaving alone" and gave up, so the buds stayed silent with no sink to
+    # select at all.
+    #
+    # A disconnect/reconnect cycle clears it. The header above notes that a plain
+    # reconnect was NOT reliable in 2026-08-03 testing, which is why this is an
+    # escalation *after* ConnectProfile rather than a replacement for it, and why
+    # it is rate limited: one attempt per device per RECONNECT_COOLDOWN, so a
+    # device that simply refuses A2DP cannot get stuck in a connect loop.
+    if ! grep -q 'a2dp-sink' <<<"$profiles" && reconnect_allowed "$mac_u"; then
+      log "$mac_u: still no A2DP — cycling the connection (BlueZ said busy)"
+      local mac_c="${mac_u//_/:}"
+      bluetoothctl disconnect "$mac_c" >/dev/null 2>&1
+      sleep 2
+      bluetoothctl connect "$mac_c" >/dev/null 2>&1
+      sleep 5
+      profiles="$(pw_profiles "$mac_u")"
+      if grep -q 'a2dp-sink' <<<"$profiles"; then
+        log "$mac_u: A2DP came up after the reconnect"
+      else
+        # Worth knowing by hand: on 2026-08-27 the sequence that worked also
+        # restarted wireplumber, which drops stale bluez nodes. Not done from
+        # here — it interrupts audio for every application, which is too
+        # heavy-handed for a background guard to decide on its own.
+        log "$mac_u: still no A2DP after reconnect. Two pairings for one set of" \
+            "buds will do this — check 'bluetoothctl devices' for a duplicate," \
+            "and try 'systemctl --user restart wireplumber'"
+      fi
+    fi
   fi
 
   local want idx=""

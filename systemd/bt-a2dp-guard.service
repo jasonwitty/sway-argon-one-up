@@ -1,8 +1,7 @@
 [Unit]
 Description=Keep Bluetooth headsets in A2DP stereo (never mono HFP)
 # Needs pipewire/wireplumber up to read and set profiles.
-After=graphical-session.target pipewire.service wireplumber.service
-PartOf=graphical-session.target
+After=pipewire.service wireplumber.service
 
 [Service]
 Type=simple
@@ -11,4 +10,17 @@ Restart=on-failure
 RestartSec=5s
 
 [Install]
-WantedBy=graphical-session.target
+# default.target, NOT graphical-session.target.
+#
+# Nothing in this sway session ever activates graphical-session.target — waybar
+# and mako are started by `exec_always` from the sway config rather than by their
+# units, so the target is never reached and anything merely *wanted* by it never
+# starts. This service was therefore dead from login every single boot, which is
+# why the earbuds "kept breaking": the guard only ever ran when someone started
+# it by hand, and was gone again after the next reboot.
+#
+# Safe here because the guard needs only D-Bus and wpctl — no WAYLAND_DISPLAY.
+# argon-lid-monitor.service uses default.target for exactly the same reason.
+# (A unit that DOES need the Wayland display, like power-button-guard, cannot
+# simply be moved here; it needs the environment sway imports at startup.)
+WantedBy=default.target

@@ -32,6 +32,7 @@ window#waybar {
 #cpu,
 #pulseaudio,
 #network,
+#bluetooth,
 #backlight,
 #custom-argon-battery,
 #custom-argon-fan,
@@ -55,6 +56,15 @@ window#waybar {
 
 #network {
   color: #@@BLUE@@;
+}
+
+#bluetooth {
+  color: #@@BLUE@@;
+}
+
+#bluetooth.off,
+#bluetooth.disabled {
+  color: #@@OVERLAY0@@;
 }
 
 #network.disconnected {

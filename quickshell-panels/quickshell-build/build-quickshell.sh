@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a trimmed Quickshell (https://quickshell.org) for the network panel.
+# Build a trimmed Quickshell (https://quickshell.org) for the network and Bluetooth panels.
 #
 #   build-quickshell.sh [--install-deps] [--prefix DIR] [--ref GIT_REF]
 #
@@ -9,8 +9,8 @@
 # lives: install.sh runs it natively, and the Dockerfile next to it runs it in
 # a clean trixie container to produce a release binary.
 #
-# Only what the panel needs is compiled in: Wayland layer-shell, unix sockets
-# (IPC) and the NetworkManager module. That keeps the dependency list short
+# Only what the panels need is compiled in: Wayland layer-shell, unix sockets
+# (IPC), the NetworkManager module and the BlueZ module. That keeps the dependency list short
 # and the build to a few minutes on a Pi 5.
 
 set -euo pipefail
@@ -77,7 +77,7 @@ cd "$WORK/quickshell"
 cmake -GNinja -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-    -DDISTRIBUTOR="sway-argon-one-up (network panel)" \
+    -DDISTRIBUTOR="sway-argon-one-up (panels)" \
     -DCRASH_HANDLER=OFF \
     -DX11=OFF \
     -DHYPRLAND=OFF \
@@ -91,8 +91,7 @@ cmake -GNinja -B build \
     -DSERVICE_POLKIT=OFF \
     -DSERVICE_GREETD=OFF \
     -DSERVICE_UPOWER=OFF \
-    -DSERVICE_NOTIFICATIONS=OFF \
-    -DBLUETOOTH=OFF
+    -DSERVICE_NOTIFICATIONS=OFF
 cmake --build build
 
 # Only the binary is needed; the QML modules are linked into it.

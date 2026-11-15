@@ -5,7 +5,7 @@
 #   network-panel-qr --password <interface>  print the Wi-Fi password
 #
 # Ported from Omarchy's omarchy-network-qr and omarchy-network-password
-# (MIT, see network-panel/LICENSE-omarchy). Needs qrencode for the matrix.
+# (MIT, see quickshell-panels/LICENSE-omarchy). Needs qrencode for the matrix.
 
 set -euo pipefail
 

@@ -79,10 +79,11 @@ include ~/.config/sway/colors
 
     # Autostart
     exec ~/.local/bin/switch-theme $(cat ~/.config/sway-themes/current)
-    # Network panel (Quickshell port of the Omarchy network manager). One
-    # long-lived process; waybar and $mod+Ctrl+n toggle it over IPC.
-    exec_always ~/.local/bin/network-panel start
-    exec blueman-applet
+    # Network + Bluetooth panels (Quickshell ports of the Omarchy ones). One
+    # long-lived process; waybar and $mod+Ctrl+n / $mod+Ctrl+b toggle them over IPC.
+    exec_always ~/.local/bin/panels start
+    # Pairing agent for the Bluetooth panel (replaces blueman-applet).
+    exec_always ~/.local/bin/bluetooth-panel agent
     exec /usr/lib/aarch64-linux-gnu/ukui-polkit/polkit-ukui-authentication-agent-1
     exec_always pkill -x mako; sleep 0.3; mako
 
@@ -271,6 +272,7 @@ bindsym $mod+r mode "resize"
     bindsym $mod+b exec /usr/bin/brave-origin --enable-low-end-device-mode --process-per-site --disable-smooth-scrolling --disable-features=TabHoverCards --disable-backgrounding-occluded-windows --disable-renderer-backgrounding
     # Network panel (Wi-Fi list, connection details, band and DNS)
     bindsym $mod+Ctrl+n exec ~/.local/bin/network-panel toggle
+    bindsym $mod+Ctrl+b exec ~/.local/bin/bluetooth-panel toggle
     for_window [app_id="network-panel-dns"] floating enable, resize set 640 220
     # File manager
     bindsym $mod+n exec thunar

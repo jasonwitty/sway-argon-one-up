@@ -7,10 +7,10 @@ import Quickshell.Wayland
 import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
-import "BluetoothModel.js" as Model
+import "Model.js" as Model
 
 // The Omarchy Bluetooth panel (shell/plugins/panels/bluetooth/Panel.qml, MIT,
-// see LICENSE-omarchy), lifted out of the Omarchy bar so it runs as a
+// see quickshell-panels/LICENSE-omarchy), lifted out of the Omarchy bar so it runs as a
 // standalone Quickshell popup under Sway + waybar.
 //
 // What changed from upstream: the bar widget and KeyboardPanel scaffolding

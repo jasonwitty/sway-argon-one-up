@@ -639,19 +639,24 @@ success ".desktop entry installed"
 # ---------------------------------------------------------------------------
 phase "Phase 9c: Network and Bluetooth panels"
 
-# Qt runtime the panel's QML needs, plus the tools its helper scripts call:
+# Qt runtime the panels need, plus the tools the network helper scripts call:
 # iw (link details, band), ping (latency) and qrencode (Wi-Fi share card).
-info "Installing network panel runtime..."
+info "Installing panel runtime..."
 sudo apt install -y \
     libqt6svg6 qt6-wayland libjemalloc2 \
     qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
     qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript \
     iw iputils-ping qrencode
-success "Network panel runtime installed"
+success "Panel runtime installed"
 
 mkdir -p "$HOME/.config/quickshell"
-rm -rf "$HOME/.config/quickshell/network-panel"
-cp -r "$REPO_DIR/network-panel/config" "$HOME/.config/quickshell/network-panel"
+rm -rf "$HOME/.config/quickshell/panels" "$HOME/.config/quickshell/network-panel"
+cp -r "$REPO_DIR/quickshell-panels/config" "$HOME/.config/quickshell/panels"
+# Each panel is its own folder in the repo; Quickshell loads them as the
+# qs.network and qs.bluetooth modules next to the shared Commons/ and Ui/.
+mkdir -p "$HOME/.config/quickshell/panels/network" "$HOME/.config/quickshell/panels/bluetooth"
+cp "$REPO_DIR"/network-panel/*.qml "$REPO_DIR"/network-panel/*.js "$HOME/.config/quickshell/panels/network/"
+cp "$REPO_DIR"/bluetooth-panel/*.qml "$REPO_DIR"/bluetooth-panel/*.js "$HOME/.config/quickshell/panels/bluetooth/"
 
 # Quickshell is not packaged for trixie and links against private Qt APIs, so
 # a binary only works with the Qt it was built for. Prefer a prebuilt release
@@ -673,7 +678,7 @@ else
         sudo install -m 0755 /tmp/quickshell /usr/local/bin/quickshell
     else
         info "No usable prebuilt quickshell; building from source..."
-        "$REPO_DIR/network-panel/quickshell-build/build-quickshell.sh" --install-deps --prefix /usr/local
+        "$REPO_DIR/quickshell-panels/quickshell-build/build-quickshell.sh" --install-deps --prefix /usr/local
     fi
     rm -f /tmp/quickshell
     if quickshell_works /usr/local/bin/quickshell; then

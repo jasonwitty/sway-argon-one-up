@@ -4,7 +4,7 @@
 #   bluetooth-panel-device pair|connect|disconnect|forget <address>
 #
 # Ported from Omarchy's omarchy-bluetooth-device (MIT, see
-# network-panel/LICENSE-omarchy). One addition: after a connect, the device's
+# quickshell-panels/LICENSE-omarchy). One addition: after a connect, the device's
 # audio sink is made the default output. Omarchy does that in the panel through
 # Quickshell's PipeWire module, which this build leaves out.
 

@@ -5,7 +5,7 @@ import "Numbers.js" as Numbers
 // English-only stand-in for Omarchy's I18n singleton, which loads per-language
 // catalogs from an Omarchy install. The strings are the `bluetooth.*`, `network.*` and
 // `wifiqr.*` entries of Omarchy's default/i18n/en/shell.json (MIT, see
-// LICENSE-omarchy), so the panel code can keep calling I18n.t() unchanged.
+// quickshell-panels/LICENSE-omarchy), so the panel code can keep calling I18n.t() unchanged.
 QtObject {
   id: root
 

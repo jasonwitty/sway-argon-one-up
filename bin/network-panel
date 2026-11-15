@@ -1,56 +1,17 @@
 #!/bin/bash
 # network-panel — control the Quickshell network panel.
 #
-#   network-panel start    run the panel daemon (exec'd by Sway at login)
 #   network-panel toggle   open/close the panel (waybar click, $mod+Ctrl+n)
-#   network-panel open|close|toggleWifi|showQr
+#   network-panel open|close|toggleWifi|showQr|openCaptivePortal
 #
-# Any command other than `start` is forwarded over Quickshell IPC, starting
-# the daemon first if it is not running.
-
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/network-panel"
-export PATH="$HOME/.local/bin:$PATH"
-
-running() {
-    quickshell ipc -p "$CONFIG" show >/dev/null 2>&1
-}
-
-start() {
-    # exec_always re-runs this on every Sway reload; one instance is enough.
-    running && return 0
-    setsid -f quickshell -p "$CONFIG" >/dev/null 2>&1
-}
+# The panel runs inside the shared panels daemon; see `panels`.
 
 case "${1:-toggle}" in
-    start)
-        start
-        ;;
-    stop)
-        quickshell kill -p "$CONFIG" >/dev/null 2>&1
-        ;;
-    restart)
-        quickshell kill -p "$CONFIG" >/dev/null 2>&1
-        # kill returns before the old instance is gone; starting while it
-        # still answers IPC would be a no-op and leave nothing running.
-        for _ in 1 2 3 4 5 6 7 8 9 10; do
-            running || break
-            sleep 0.2
-        done
-        start
-        ;;
     open|close|toggle|toggleWifi|showQr|openCaptivePortal)
-        if ! running; then
-            start
-            # Wait for the IPC socket rather than a fixed sleep.
-            for _ in $(seq 1 50); do
-                running && break
-                sleep 0.1
-            done
-        fi
-        quickshell ipc -p "$CONFIG" call network "$1" >/dev/null 2>&1
+        exec "$HOME/.local/bin/panels" call network "${1:-toggle}"
         ;;
     *)
-        echo "Usage: network-panel [start|stop|restart|toggle|open|close|toggleWifi|showQr]" >&2
+        echo "Usage: network-panel [toggle|open|close|toggleWifi|showQr|openCaptivePortal]" >&2
         exit 2
         ;;
 esac

@@ -4,7 +4,7 @@
 #   bluetooth-panel-power on|off|toggle|is-on
 #
 # Ported from Omarchy's omarchy-bluetooth-power (MIT, see
-# network-panel/LICENSE-omarchy).
+# quickshell-panels/LICENSE-omarchy).
 #
 # BlueZ never persists an adapter's Powered property, so turning Bluetooth off
 # through bluetoothctl lasts only until the next boot. The rfkill soft block

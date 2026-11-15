@@ -884,8 +884,8 @@ Scope {
         return sectionName === "connected" ? "" : Commons.I18n.t("bluetooth.connectedStatus")
       }
       if (action === "connecting" || devState === 3 || dev.pairing === true) return Commons.I18n.t("bluetooth.connecting")
-      // Not upstream: two entries with one name (earbuds that pair under a
-      // second address, say) are told apart by address.
+      // Not upstream: two entries with one name (two sets of the same earbuds,
+      // say) are told apart by address.
       return root.labelIsShared(dev) ? dev.address : ""
     }
 

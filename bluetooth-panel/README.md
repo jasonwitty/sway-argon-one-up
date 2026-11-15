@@ -24,5 +24,5 @@ and the licence.
   `bt-a2dp-guard`.
 - **Pairing agent** is started from the Sway config rather than a systemd
   user unit, because this session never activates `graphical-session.target`.
-- **Devices that share a name** show their address, so a duplicate pairing
-  can be told apart and forgotten.
+- **Devices that share a name** show their address, so two of the same model
+  can be told apart.

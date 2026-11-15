@@ -1,0 +1,28 @@
+#!/bin/bash
+# "Pretend suspend" — the menu-initiated entry point to the same soft-suspend
+# that a lid close performs.
+#
+# The Pi 5 / CM5 cannot do real system suspend (`systemctl suspend`
+# black-screens it), so `lid-suspend close` powers subsystems down one at a
+# time instead: swaylock, displays off, powersave governor, wifi/bluetooth
+# rfkill'd, webcam unbound.
+#
+# The catch this script exists to solve: a lid close is resumed by the lid
+# GPIO's rising edge (argon-lid-monitor -> `lid-suspend open`). Invoked from the
+# power menu with the lid *open*, there is no rising edge coming, so nothing
+# would ever wake it. The flag written here tells power-button-guard that the
+# next short press of the physical power button means "resume", not "show the
+# menu" — which is what a power button should do on a sleeping machine anyway.
+#
+# The flag lives in XDG_RUNTIME_DIR (tmpfs), so a hard power-off or reboot
+# cannot leave it behind and strand the daemon in resume-only mode.
+# `lid-suspend open` clears it, so resuming by lid works too and both paths
+# leave consistent state.
+set -u
+
+FLAG="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/soft-suspended"
+: > "$FLAG"
+
+# Set the flag BEFORE going down, so a press during the transition still
+# resumes rather than opening an invisible menu on a blanked screen.
+exec "$(dirname "$(readlink -f "$0")")/lid-suspend" close

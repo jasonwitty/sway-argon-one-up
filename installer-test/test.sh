@@ -112,7 +112,7 @@ sudo apt-get install -y --no-install-recommends \
     libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
     librsvg2-dev libsoup-3.0-dev patchelf \
     >/dev/null 2>&1
-for c in argon-battery-rs argon-fan argon-lid-monitor trackpad-guard system-dashboard ; do
+for c in argon-battery-rs argon-fan argon-lid-monitor trackpad-guard power-button-guard system-dashboard ; do
     if [ -f "$c/Cargo.toml" ]; then
         echo "  checking $c..."
         if (cd "$c" && cargo check --locked --release 2>&1 | tail -1) ; then

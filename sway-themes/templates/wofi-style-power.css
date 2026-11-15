@@ -1,0 +1,78 @@
+/* Power-button confirm prompt.
+ *
+ * Structurally a copy of wofi-style.css -- the layout there is proven against
+ * wofi 1.4.1's sizing quirks, and deviating from it (collapsing the input row,
+ * oversized entry padding) made wofi clip the last entry or render an empty
+ * list. So the geometry stays stock and only the palette and accents change.
+ *
+ * Colors follow waybar-style.css rather than the launcher: same #BASE surface,
+ * same #SURFACE0 selection fill, same #BLUE accent edge as
+ * `#workspaces button.focused`, so the prompt reads as part of the bar's
+ * visual family. The border is #RED instead of #BLUE because this dialog can
+ * power the machine off, and waybar already uses #RED for its own power glyph.
+ */
+
+* {
+  font-family: JetBrainsMono Nerd Font;
+  font-size: 13px;
+}
+
+window {
+  background-color: #@@BASE@@;
+  color: #@@TEXT@@;
+  border: 2px solid #@@RED@@;
+  border-radius: 8px;
+}
+
+/* Carries the "Power" prompt label, so it is styled rather than hidden. */
+#input {
+  background-color: #@@MANTLE@@;
+  color: #@@TEXT@@;
+  border: none;
+  border-bottom: 2px solid #@@RED@@;
+  padding: 8px;
+  margin: 4px;
+}
+
+#inner-box {
+  background-color: #@@BASE@@;
+}
+
+#outer-box {
+  padding: 4px;
+}
+
+/* 6px, same as wofi-style.css. wofi allocates list height from its own font
+ * metrics, so padding larger than the launcher's makes the rows overflow the
+ * --lines allocation and clips the last entry. */
+#entry {
+  padding: 6px;
+  border-radius: 4px;
+}
+
+/* Matches #workspaces button.focused in waybar: SURFACE0 fill plus a solid
+ * accent edge, so selection feels like the same widget set. */
+#entry:selected {
+  background-color: #@@SURFACE0@@;
+}
+
+#text {
+  color: #@@TEXT@@;
+  background-color: transparent;
+}
+
+/* The GTK theme paints its own label-selection highlight behind the selected
+ * row's text, which showed up as a stray colored box around the label. The
+ * row background is the selection indicator here, so the label and its
+ * selection node are forced transparent. */
+#text:selected {
+  color: #@@TEXT@@;
+  background-color: transparent;
+}
+
+#entry:selected #text,
+#text selection,
+#entry selection {
+  background-color: transparent;
+  color: #@@TEXT@@;
+}

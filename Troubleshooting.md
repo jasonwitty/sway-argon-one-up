@@ -104,7 +104,7 @@ grep -r HandleLidSwitch /etc/systemd/logind.conf /etc/systemd/logind.conf.d/ 2>/
 
 All `HandleLidSwitch` values should be commented out or set to `ignore`. The safest option is to not have any overrides -- the Argon GPIO daemon handles the lid, not logind.
 
-Also make sure the powermenu does not include a Suspend option (`systemctl suspend` will black-screen).
+The power menu's **Suspend** entry must never be wired to `systemctl suspend` — that black-screens the machine. It runs `bin/soft-suspend`, which performs the same subsystem-by-subsystem soft suspend as a lid close and arms the physical power button as the wake trigger.
 
 ## Waybar or wob missing after sway reload
 

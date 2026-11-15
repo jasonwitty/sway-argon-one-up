@@ -139,7 +139,7 @@ BEGIN {
         else if (cmd ~ /sway-help/) desc = "Keybinding Help"
         else if (cmd ~ /thunar/) desc = "File Manager"
         else if (cmd ~ /swaynag/) desc = "Exit Sway"
-        else if (cmd ~ /powermenu/) desc = "Power Menu"
+        else if (cmd ~ /power-prompt|powermenu/) desc = "Power Menu"
         else desc = cmd
     }
     else if (action == "kill") desc = "Kill Window"

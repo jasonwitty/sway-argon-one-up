@@ -76,6 +76,7 @@ apply_theme() {
     render_template "$TEMPLATES_DIR/swaylock-config" "$HOME/.config/swaylock/config"
     render_template "$TEMPLATES_DIR/wofi-style.css" "$HOME/.config/wofi/style.css"
     render_template "$TEMPLATES_DIR/wofi-style-help.css" "$HOME/.config/wofi/style-help.css"
+    render_template "$TEMPLATES_DIR/wofi-style-power.css" "$HOME/.config/wofi/style-power.css"
     render_template "$TEMPLATES_DIR/wob.ini" "$HOME/.config/wob/wob.ini"
     mkdir -p "$HOME/.config/system-dashboard"
     render_template "$TEMPLATES_DIR/dashboard.css" "$HOME/.config/system-dashboard/dashboard.css"

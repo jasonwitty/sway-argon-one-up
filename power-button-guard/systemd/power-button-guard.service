@@ -1,0 +1,48 @@
+[Unit]
+# User service, not a system one: the daemon only needs to read the power
+# button (jason is in the `input` group, so no root) and to talk to swaynag on
+# the session's Wayland display. A system service would have neither
+# WAYLAND_DISPLAY nor a seat to draw the prompt on.
+#
+# Deliberately NOT wanted by the greeter: with no user logged in there is
+# nobody to answer a confirm prompt, so logind's own handling (and the
+# drop-in's HandlePowerKeyLongPress backstop) is the right behavior there.
+Description=Power button confirm prompt (poweroff / restart / cancel)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+# Give up after 10 failed starts in 2 minutes instead of retrying forever.
+# A malformed ExecStart or a missing binary will never fix itself, and an
+# uncapped Restart=on-failure loop just spams the journal thousands of times
+# (a quoting bug here did exactly that -- 14,470 restarts before it was
+# noticed). Either way the power key is unprotected when this daemon is down,
+# so it is better to stop in a visible `failed` state that shows up in
+# `systemctl --user status` than to churn silently. The window is wide enough
+# that a genuinely transient failure -- e.g. the evdev node not present yet at
+# login -- still gets plenty of retries.
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# Wrapped in systemd-inhibit rather than relying solely on the logind drop-in.
+# Two reasons:
+#   1. A drop-in only takes effect once logind re-reads its config, and
+#      restarting systemd-logind under a live Wayland session risks killing the
+#      session. The inhibitor takes effect the moment the service starts, so no
+#      reboot and no logind restart is needed.
+#   2. It fails safe. If the drop-in is ever missing or reverted, logind would
+#      otherwise still poweroff instantly and win the race against us -- the
+#      lock guarantees the key belongs to this daemon whenever it is running,
+#      and is released automatically the moment it stops.
+ExecStart=/usr/bin/systemd-inhibit \
+    --what=handle-power-key \
+    --who=power-button-guard \
+    --why="Show a confirm prompt instead of powering off instantly" \
+    --mode=block \
+    /usr/local/bin/power-button-guard
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=graphical-session.target

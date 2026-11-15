@@ -26,7 +26,7 @@ This setup is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produc
 | `waybar/` | Top bar with workspaces, clock, CPU, volume, backlight, fan, Argon battery, idle/lock toggle, audio sink picker, tray, theme/scale/Claude/help/power buttons |
 | `sway-themes/` | 10 theme definitions + templates for all themed apps (sway, waybar, foot, mako, swaylock, wofi, wob, Brave, Chromium, Thunar/GTK, system-dashboard) |
 | `wallpapers/` | Matching wallpaper for each theme (auto-applied on theme switch) |
-| `bin/` | `switch-theme`, `sway-scale`, `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `lid-suspend`, `power-mode`, `power-startup`, `powermenu`, `screen-record`, `argon-battery`, `idle-toggle`, `audio-sink-picker` |
+| `bin/` | `switch-theme`, `sway-scale`, `sway-help`, `claude-prompt`, `brightness`, `start-wob`, `lid-suspend`, `power-mode`, `power-startup`, `power-prompt`, `powermenu`, `soft-suspend`, `screen-record`, `argon-battery`, `idle-toggle`, `audio-sink-picker` |
 | `foot/` | Terminal emulator config with live-recolored theme support |
 | `wofi/` | App launcher and help overlay styles |
 | `wob/` | Wayland Overlay Bar config for brightness/volume indicators |

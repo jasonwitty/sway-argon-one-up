@@ -1,10 +1,13 @@
 #!/bin/bash
-
-choice=$(printf "Lock\nReboot\nShutdown\nLogout" | wofi --dmenu --prompt "Power")
-
-case "$choice" in
-  Lock) swaylock ;;
-  Reboot) systemctl reboot ;;
-  Shutdown) systemctl poweroff ;;
-  Logout) swaymsg exit ;;
-esac
+# Compatibility wrapper. The real implementation is `power-prompt`, which is
+# also what the physical power button opens via power-button-guard.
+#
+# There used to be two separate power menus -- this unstyled wofi list on the
+# waybar power click, and the themed prompt on the power button. They are now
+# merged into power-prompt so there is one power UI to theme and maintain.
+#
+# Kept as a wrapper rather than deleted because install.sh only ever copies
+# bin/* forward; removing this file would leave the old standalone copy behind
+# in ~/.local/bin on every existing install, and any user keybinding still
+# pointing here would silently keep the old menu alive.
+exec "$(dirname "$(readlink -f "$0")")/power-prompt" "$@"

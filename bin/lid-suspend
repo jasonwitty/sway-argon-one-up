@@ -52,6 +52,12 @@ case "$1" in
     open)
         echo "=== LID OPEN $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$LOG"
 
+        # Clear the menu-initiated soft-suspend flag (see bin/soft-suspend).
+        # Done here rather than only in the power-button path so that resuming
+        # by lid also clears it -- otherwise the next power-button press would
+        # be swallowed as a "resume" instead of opening the power menu.
+        rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/soft-suspended"
+
         swaymsg "output * power on"
         log "display: on"
 

@@ -143,6 +143,7 @@ Verify:
 - [ ] Waybar recolored (restart is automatic)
 - [ ] Foot terminals recolored live via OSC 4/10/11 (no restart needed)
 - [ ] Wofi menu style looks right (`$mod+d`)
+- [ ] Power menu recolored — tap the physical power button, or click waybar's ⏻ (both open the same menu). Border should be the new `RED`, selection fill the new `SURFACE0`, and the six glyphs should pick up `RED`/`PEACH`/`SKY`/`YELLOW`/`MAUVE`/`TEXT` for Power off / Restart / Suspend / Lock / Logout / Cancel. (Cancel or Esc dismisses it; do **not** hold the physical button, that force-powers off after 4s.)
 - [ ] Mako notification style (`notify-send test`)
 - [ ] Swaylock (run `swaylock` briefly)
 - [ ] Wob volume bar (tap volume keys)
@@ -207,6 +208,25 @@ The switcher kills and restarts waybar because reload doesn't reliably pick up `
 
 If you forget Step 4, your theme will still work if you call `switch-theme <flavor>` directly — `apply_theme` validates against the file existing, not the list. But `--picker` will not show it, and `--help`-style listings won't include it. Always add it to the list.
 
+### Adding a *new template* means editing `switch-theme` — and installing it
+
+Templates are not auto-discovered. `switch-theme` has an explicit `render_template` call per file, so a template dropped into `sway-themes/templates/` is simply never rendered until you add its line.
+
+Worse, the failure is silent and looks like a *theme* bug: the app keeps whatever stylesheet was last written, so it appears frozen on some older palette while everything else switches correctly. This is exactly how `wofi-style-power.css` behaved when it was added — the power prompt stayed on Nord for several theme switches.
+
+Two steps, and the second is the one that gets forgotten:
+
+1. Add `render_template "$TEMPLATES_DIR/<name>" "$HOME/.config/<dest>"` to `bin/switch-theme`.
+2. **Install it live**: `install -m 755 bin/switch-theme ~/.local/bin/switch-theme`. Editing the repo copy changes nothing on a running desktop — `install.sh` only copies `bin/*` on a fresh install. Verify with `diff -q bin/switch-theme ~/.local/bin/switch-theme`.
+
+The same applies to the template itself (`~/.config/sway-themes/templates/`) and to any themed script under `bin/`.
+
+### Some scripts read the flavor file directly, not just templates
+
+`bin/power-prompt` sources `~/.config/sway-themes/<current>` at runtime to color its glyphs via pango markup, because per-entry colors can't come from CSS. It reads `RED`, `PEACH`, `SKY`, `YELLOW`, `MAUVE`, and `TEXT`.
+
+So the palette variable *names* are load-bearing beyond the templates. If you rename or drop one of those in a flavor file, the prompt silently falls back to hardcoded Nord-ish defaults instead of erroring. Another reason to keep the full Catppuccin-convention variable set in every flavor file even when a value looks unused.
+
 ### `BROWSER_COLOR` is optional — only override when needed
 
 The default `local color="#${BROWSER_COLOR:-$BASE}"` falls back to `BASE`. Only set `BROWSER_COLOR` in the flavor file if `BASE` produces a browser palette you dislike. For most themes, leave it unset.
@@ -223,11 +243,31 @@ When a theme's palette is in the `#10-#20` range (Arc Raiders), small hex differ
 |-----------------------------------------|--------------------------------------------------|
 | `sway-themes/<flavor>`                  | Color + metadata definitions for the theme      |
 | `sway-themes/templates/*`               | Per-app config templates with `@@VAR@@` slots   |
+| `bin/power-prompt`                      | Power-button prompt; reads the flavor file live |
 | `wallpapers/<flavor>.*`                 | Default wallpaper, set on theme switch          |
 | `gtk-themes/<GtkThemeName>/`            | Bundled GTK theme, installed to `~/.themes/`    |
 | `bin/switch-theme`                      | The renderer/applier (edit `available_flavors`) |
 | `~/.config/sway-themes/current`         | Runtime state: name of active flavor            |
 | `~/.config/sway-themes/wallpaper-override` | User wallpaper override (beats theme default)|
+
+## Template Inventory
+
+Every file in `sway-themes/templates/` is rendered by `switch-theme` on each switch. You don't edit these when adding a *theme* — they pull from your flavor file automatically — but this is the full list of surfaces a new palette has to look right on:
+
+| Template                  | Rendered to                                  | Surface                                  |
+|---------------------------|----------------------------------------------|------------------------------------------|
+| `sway-colors`             | `~/.config/sway/colors`                      | Window borders / titlebars               |
+| `waybar-style.css`        | `~/.config/waybar/style.css`                 | Status bar                               |
+| `foot-colors.ini`         | `~/.config/foot/colors.ini`                  | Terminal (also live-recolored via OSC)   |
+| `mako-config`             | `~/.config/mako/config`                      | Notifications                            |
+| `swaylock-config`         | `~/.config/swaylock/config`                  | Lock screen                              |
+| `wofi-style.css`          | `~/.config/wofi/style.css`                   | App launcher / pickers (`$mod+d`)        |
+| `wofi-style-help.css`     | `~/.config/wofi/style-help.css`              | `sway-help` cheatsheet                   |
+| `wofi-style-power.css`    | `~/.config/wofi/style-power.css`             | **Power-button confirm prompt**          |
+| `wob.ini`                 | `~/.config/wob/wob.ini`                      | Volume / brightness bar                  |
+| `dashboard.css`           | `~/.config/system-dashboard/dashboard.css`   | system-dashboard Tauri app               |
+
+`wofi-style-power.css` deliberately mirrors `waybar-style.css` (same font, `BASE` surface, `SURFACE0` selection) rather than `wofi-style.css`, so the prompt reads as part of the bar. Its border uses `RED` instead of `BLUE` because the dialog can power the machine off.
 
 ## Template Variable Reference
 

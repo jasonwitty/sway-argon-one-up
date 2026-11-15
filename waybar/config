@@ -132,6 +132,6 @@
   "custom/power": {
     "format": "⏻",
     "tooltip": false,
-    "on-click": "~/.local/bin/powermenu"
+    "on-click": "~/.local/bin/power-prompt"
   }
 }

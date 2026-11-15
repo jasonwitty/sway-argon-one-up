@@ -1,0 +1,9 @@
+[package]
+name = "power-button-guard"
+version = "0.1.0"
+edition = "2021"
+description = "Turn the Argon ONE UP / Raspberry Pi 5 power button into a confirm prompt instead of an instant shutdown"
+license = "Apache-2.0"
+
+[dependencies]
+evdev = "0.13"

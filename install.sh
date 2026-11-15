@@ -196,7 +196,7 @@ sudo apt install -y \
     waybar wofi foot wob mako-notifier \
     greetd gtkgreet \
     seatd pipewire wireplumber libspa-0.2-bluetooth libspa-0.2-libcamera \
-    network-manager network-manager-gnome \
+    network-manager \
     ukui-polkit \
     ddcutil i2c-tools \
     fish \
@@ -633,6 +633,56 @@ sudo mkdir -p /usr/local/share/applications
 sudo install -m 0644 "$REPO_DIR/system-dashboard/system-dashboard.desktop" \
     /usr/local/share/applications/system-dashboard.desktop
 success ".desktop entry installed"
+
+# ---------------------------------------------------------------------------
+# Phase 9c: Network panel (Quickshell port of the Omarchy network manager)
+# ---------------------------------------------------------------------------
+phase "Phase 9c: Network panel"
+
+# Qt runtime the panel's QML needs, plus the tools its helper scripts call:
+# iw (link details, band), ping (latency) and qrencode (Wi-Fi share card).
+info "Installing network panel runtime..."
+sudo apt install -y \
+    libqt6svg6 qt6-wayland libjemalloc2 \
+    qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+    qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript \
+    iw iputils-ping qrencode
+success "Network panel runtime installed"
+
+mkdir -p "$HOME/.config/quickshell"
+rm -rf "$HOME/.config/quickshell/network-panel"
+cp -r "$REPO_DIR/network-panel/config" "$HOME/.config/quickshell/network-panel"
+
+# Quickshell is not packaged for trixie and links against private Qt APIs, so
+# a binary only works with the Qt it was built for. Prefer a prebuilt release
+# when one is published and actually starts on this system's Qt; otherwise
+# build it here (a few minutes on a Pi 5).
+quickshell_works() {
+    "$1" --version >/dev/null 2>&1
+}
+
+if [ -x /usr/local/bin/quickshell ] && quickshell_works /usr/local/bin/quickshell; then
+    success "quickshell already installed"
+else
+    QS_TAG=$(curl -fsSL "https://api.github.com/repos/jasonwitty/sway-argon-one-up/releases" 2>/dev/null \
+        | jq -r '[.[] | select(.tag_name | startswith("quickshell-v"))][0].tag_name // empty')
+    if [ -n "$QS_TAG" ] && curl -fsSL -o /tmp/quickshell \
+        "https://github.com/jasonwitty/sway-argon-one-up/releases/download/${QS_TAG}/quickshell-aarch64" \
+        && chmod +x /tmp/quickshell && quickshell_works /tmp/quickshell; then
+        info "Using prebuilt quickshell from release $QS_TAG"
+        sudo install -m 0755 /tmp/quickshell /usr/local/bin/quickshell
+    else
+        info "No usable prebuilt quickshell; building from source..."
+        "$REPO_DIR/network-panel/quickshell-build/build-quickshell.sh" --install-deps --prefix /usr/local
+    fi
+    rm -f /tmp/quickshell
+    if quickshell_works /usr/local/bin/quickshell; then
+        success "quickshell installed"
+    else
+        # Not fatal: waybar's right-click still opens nmtui.
+        warn "quickshell did not install; the network panel will not open (right-click the waybar network icon for nmtui)"
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # Phase 10: System configuration

@@ -77,10 +77,12 @@ window#waybar {
 }
 
 #custom-argon-battery.warning {
+  background: transparent;
   color: #ef9f76;
 }
 
 #custom-argon-battery.critical {
+  background: transparent;
   color: #e78284;
 }
 
@@ -93,10 +95,12 @@ window#waybar {
 }
 
 #battery.warning {
+  background: transparent;
   color: #ef9f76;
 }
 
 #battery.critical {
+  background: transparent;
   color: #e78284;
 }
 

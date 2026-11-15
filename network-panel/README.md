@@ -29,6 +29,30 @@ that waybar's network module and `Mod+Ctrl+N` toggle over IPC.
   Tailscale exit-node handling.
 - English strings only.
 
+
+## Bluetooth panel
+
+The same Quickshell process also hosts a port of Omarchy's Bluetooth panel
+(`config/BluetoothPanel.qml`, `config/BluetoothModel.js`): power switch,
+paired and nearby devices, pair / connect / disconnect / forget and battery
+level. It talks to BlueZ. Waybar's Bluetooth module and `Mod+Ctrl+B` toggle
+it, and Tab switches between the two panels.
+
+| Path | What it is |
+|---|---|
+| `../bin/bluetooth-panel` | Launcher; `bluetooth-panel agent` runs the pairing agent (`bt-agent`, from `bluez-tools`) that blueman-applet used to provide |
+| `../bin/bluetooth-panel-power` | On/off through the rfkill soft block, so the choice survives a reboot |
+| `../bin/bluetooth-panel-device` | Pair / connect / disconnect / forget through `bluetoothctl` |
+
+Differences from Omarchy:
+
+- **Default audio output** after a connect is set by `bluetooth-panel-device`
+  with `wpctl` rather than in the panel through Quickshell's PipeWire module,
+  which this build leaves out. It waits for the A2DP sink so it does not race
+  `bt-a2dp-guard`.
+- **Pairing agent** is started from the Sway config rather than a systemd
+  user unit, because this session never activates `graphical-session.target`.
+
 ## Licence
 
 The files under `config/` that come from Omarchy, and the helper scripts

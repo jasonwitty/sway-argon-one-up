@@ -1,0 +1,48 @@
+#!/bin/bash
+# bluetooth-panel — control the Quickshell Bluetooth panel.
+#
+#   bluetooth-panel toggle            open/close the panel (waybar click, $mod+Ctrl+b)
+#   bluetooth-panel open|close
+#   bluetooth-panel toggleBluetooth   turn the radio on/off (waybar right-click)
+#   bluetooth-panel agent             run the pairing agent (exec'd by Sway at login)
+#
+# The panel lives in the same Quickshell process as the network panel, so the
+# daemon itself is started and stopped with `network-panel start|stop|restart`.
+
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/network-panel"
+export PATH="$HOME/.local/bin:$PATH"
+
+running() {
+    quickshell ipc -p "$CONFIG" show >/dev/null 2>&1
+}
+
+case "${1:-toggle}" in
+    open|close|toggle|toggleBluetooth)
+        if ! running; then
+            network-panel start
+            # Wait for the IPC socket rather than a fixed sleep.
+            for _ in $(seq 1 50); do
+                running && break
+                sleep 0.1
+            done
+        fi
+        quickshell ipc -p "$CONFIG" call bluetooth "$1" >/dev/null 2>&1
+        ;;
+    agent)
+        # Pairing needs an agent registered with BlueZ, which blueman-applet
+        # used to provide. NoInputNoOutput accepts "just works" pairing, the
+        # same choice Omarchy makes; the adapter is not discoverable, so only
+        # a device you pick in the panel gets as far as asking.
+        #
+        # Started from the Sway config, not a systemd user unit: nothing in
+        # this session activates graphical-session.target, so a unit wanted by
+        # it would never run.
+        command -v bt-agent >/dev/null || { echo "bluetooth-panel: bt-agent not found (apt install bluez-tools)" >&2; exit 1; }
+        pgrep -u "$USER" -x bt-agent >/dev/null && exit 0
+        setsid -f bt-agent -c NoInputNoOutput >/dev/null 2>&1
+        ;;
+    *)
+        echo "Usage: bluetooth-panel [toggle|open|close|toggleBluetooth|agent]" >&2
+        exit 2
+        ;;
+esac

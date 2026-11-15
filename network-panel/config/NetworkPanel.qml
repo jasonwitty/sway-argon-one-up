@@ -32,6 +32,9 @@ Scope {
     readonly property string fontFamily: Style.font.family
   }
 
+  // Emitted on Tab / Shift+Tab; shell.qml hands over to the next panel.
+  signal switchRequested(int direction)
+
   function open() { opened = true }
   function toggle() { opened ? close() : open() }
 
@@ -1290,6 +1293,7 @@ Scope {
         }
       }
       onCloseRequested: root.close()
+      onTabRequested: function(direction) { root.switchRequested(direction) }
       onTextKey: function(t) {
         if (t === "r" || t === "R") root.refresh()
         else if (t === "w" || t === "W") root.toggleNetwork()

@@ -20,6 +20,7 @@
     "backlight",
     "custom/argon-battery",
     "network",
+    "bluetooth",
     "tray",
     "custom/power"
   ],
@@ -62,6 +63,20 @@
     "tooltip": true,
     "on-click": "~/.local/bin/network-panel toggle",
     "on-click-right": "foot -e nmtui"
+  },
+  "bluetooth": {
+    "format": "󰂯",
+    "format-connected": "󰂱",
+    "format-disabled": "󰂲",
+    "format-off": "󰂲",
+    "format-no-controller": "",
+    "tooltip-format": "Bluetooth on",
+    "tooltip-format-connected": "{device_enumerate}",
+    "tooltip-format-enumerate-connected": "{device_alias}",
+    "tooltip-format-off": "Bluetooth off",
+    "tooltip-format-disabled": "Bluetooth off",
+    "on-click": "~/.local/bin/bluetooth-panel toggle",
+    "on-click-right": "~/.local/bin/bluetooth-panel toggleBluetooth"
   },
   "clock": {
     "format": "{:%a %b %d  %H:%M}",

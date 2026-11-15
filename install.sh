@@ -205,7 +205,7 @@ sudo apt install -y \
     xdg-desktop-portal-wlr \
     fonts-firacode fonts-noto-color-emoji fonts-noto-core \
     thunar mpv imv file-roller galculator zathura \
-    blueman hwinfo neovim micro \
+    bluez bluez-tools hwinfo neovim micro \
     papirus-icon-theme libglib2.0-bin gsettings-desktop-schemas \
     xdg-user-dirs \
     python3 \
@@ -635,9 +635,9 @@ sudo install -m 0644 "$REPO_DIR/system-dashboard/system-dashboard.desktop" \
 success ".desktop entry installed"
 
 # ---------------------------------------------------------------------------
-# Phase 9c: Network panel (Quickshell port of the Omarchy network manager)
+# Phase 9c: Network + Bluetooth panels (Quickshell ports of the Omarchy ones)
 # ---------------------------------------------------------------------------
-phase "Phase 9c: Network panel"
+phase "Phase 9c: Network and Bluetooth panels"
 
 # Qt runtime the panel's QML needs, plus the tools its helper scripts call:
 # iw (link details, band), ping (latency) and qrencode (Wi-Fi share card).

@@ -30,6 +30,12 @@ case "${1:-toggle}" in
         ;;
     restart)
         quickshell kill -p "$CONFIG" >/dev/null 2>&1
+        # kill returns before the old instance is gone; starting while it
+        # still answers IPC would be a no-op and leave nothing running.
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            running || break
+            sleep 0.2
+        done
         start
         ;;
     open|close|toggle|toggleWifi|showQr|openCaptivePortal)

@@ -107,11 +107,13 @@ Scope {
   readonly property color contentForeground: bar.foreground
   readonly property string contentFontFamily: bar.fontFamily
 
-  readonly property int cellWidth: Style.space(52)
-  readonly property int cellHeight: Style.space(34)
+  // Sizes are scaled down from upstream (52x34 cells, a 52px date, a 560px
+  // card) to sit comfortably on the 14-inch panel next to the other popups.
+  readonly property int cellWidth: Style.space(38)
+  readonly property int cellHeight: Style.space(26)
   readonly property int cellSpacing: Style.space(2)
-  readonly property int weekColumnWidth: Style.space(32)
-  readonly property int gutterWidth: Style.space(14)
+  readonly property int weekColumnWidth: Style.space(26)
+  readonly property int gutterWidth: Style.space(10)
 
 
   function open() {
@@ -287,7 +289,7 @@ Scope {
       anchors.top: parent.top
       anchors.horizontalCenter: parent.horizontalCenter
       anchors.topMargin: panel.barHeight + panel.margin
-      width: Math.min(Style.space(560), panel.width - panel.margin * 2)
+      width: Math.min(Style.space(400), panel.width - panel.margin * 2)
       height: Math.min(calendarColumn.implicitHeight + contentTopInset + contentBottomInset,
         panel.height - panel.barHeight - panel.margin * 2)
       clip: true
@@ -357,7 +359,7 @@ Scope {
           Row {
             id: heroRow
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: Style.space(22)
+            spacing: Style.space(12)
 
             Text {
               // Baseline-aligned, not center-aligned: "July 26" carries a
@@ -372,7 +374,7 @@ Scope {
               // Decorative, and deliberately outside the Style.font.*
               // scale. Sized so the glyph reads at the cap height of the
               // date beside it rather than towering over it.
-              font.pixelSize: 48
+              font.pixelSize: 28
             }
 
             Text {
@@ -384,7 +386,7 @@ Scope {
                 ? Style.hoverStateColor(root.contentForeground, Commons.Color.accent)
                 : root.contentForeground
               font.family: root.contentFontFamily
-              font.pixelSize: 52
+              font.pixelSize: 30
               font.bold: true
             }
           }
@@ -625,7 +627,7 @@ Scope {
             id: gridColumn
             // The meter above is a solid rule; the grid needs room to
             // read as its own block rather than hanging off it.
-            y: Style.space(18)
+            y: Style.space(12)
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Style.space(3)
 

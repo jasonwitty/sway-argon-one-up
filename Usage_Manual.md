@@ -143,7 +143,7 @@ Polls at 2s while focused, 10s while blurred. On tiling WMs it hides client-side
 
 Ten themes are available, each applying a coordinated color scheme across all apps simultaneously — sway window borders, waybar, foot terminals, mako notifications, swaylock, wofi, wob, GTK apps (including Thunar folder colors), Brave, Chromium, and the system dashboard.
 
-**Available themes:** Catppuccin Frappe, Mocha, Latte, Macchiato, Dracula, Nord, Gruvbox Dark, Monokai Dark, Monokai Light, Arc Raiders.
+**Available themes:** Catppuccin Frappe, Mocha, Latte, Macchiato, Dracula, Nord, Gruvbox Dark, Monokai Dark, Monokai Light, Arc Raiders, Osaka Jade, Sakurazuki.
 
 | Method | Action |
 |--------|--------|

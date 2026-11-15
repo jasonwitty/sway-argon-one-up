@@ -1,0 +1,42 @@
+# Sakurazuki — dark low-contrast plum theme built around a sakura wallpaper
+# Palette from https://github.com/ahmed-z0/omarchy-sakurazuki-theme
+THEME_NAME="Sakurazuki"
+FLAVOR="sakurazuki"
+COLOR_SCHEME="prefer-dark"
+GTK_THEME="Dracula"
+ICON_THEME="Papirus-Dark"
+FOLDER_COLOR="magenta"
+WALLPAPER="$HOME/.wallpapers/sakurazuki.png"
+
+# Muted rose accents with moonlit blue highlights. RED is a touch stronger
+# than upstream's rose so urgent states stay distinguishable from the accent.
+ROSEWATER="e7dfe9"
+FLAMINGO="c994b3"
+PINK="c994b3"
+MAUVE="bea2c7"
+RED="d0708c"
+MAROON="b57a92"
+PEACH="c994b3"
+YELLOW="bea2c7"
+GREEN="8791ae"
+TEAL="94abd1"
+SKY="94abd1"
+SAPPHIRE="7e95c1"
+BLUE="b6849d"
+LAVENDER="c3a5ca"
+
+# Pale lilac text scale
+TEXT="d8d0dc"
+SUBTEXT1="c0b7c5"
+SUBTEXT0="a99fae"
+OVERLAY2="9a8ea1"
+OVERLAY1="82758a"
+OVERLAY0="6b5e72"
+
+# Near-black plum backgrounds
+SURFACE2="3d3548"
+SURFACE1="2e2738"
+SURFACE0="211c29"
+BASE="14111a"
+MANTLE="100d15"
+CRUST="0b0910"

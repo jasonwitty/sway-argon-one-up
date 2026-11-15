@@ -47,7 +47,7 @@ This setup is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produc
 
 ## Themes
 
-Switch between 10 themes with **Mod+T** or the waybar palette icon. Every themed app updates simultaneously — sway window borders, waybar, foot terminals, mako notifications, swaylock, wofi, wob, GTK apps (including Thunar folder colors), Brave, Chromium, and the wallpaper.
+Switch between 12 themes with **Mod+T** or the waybar palette icon. Every themed app updates simultaneously — sway window borders, waybar, foot terminals, mako notifications, swaylock, wofi, wob, GTK apps (including Thunar folder colors), Brave, Chromium, and the wallpaper.
 
 <p>
 <img src="screenshots/theme-frappe.png" width="19%" alt="Catppuccin Frappe">
@@ -64,7 +64,7 @@ Switch between 10 themes with **Mod+T** or the waybar palette icon. Every themed
 <img src="screenshots/theme-arc-raiders.png" width="19%" alt="Arc Raiders">
 </p>
 
-*Frappe, Mocha, Latte, Macchiato, Dracula, Nord, Gruvbox Dark, Monokai Dark, Monokai Light, Arc Raiders*
+*Frappe, Mocha, Latte, Macchiato, Dracula, Nord, Gruvbox Dark, Monokai Dark, Monokai Light, Arc Raiders (pictured), plus Osaka Jade and Sakurazuki*
 
 ## Documentation
 

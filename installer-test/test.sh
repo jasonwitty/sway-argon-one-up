@@ -22,7 +22,7 @@ CORE_PKGS=(
     waybar wofi foot wob mako-notifier
     greetd gtkgreet
     seatd pipewire wireplumber
-    network-manager network-manager-gnome
+    network-manager
     ukui-polkit
     ddcutil i2c-tools
     fish
@@ -57,6 +57,31 @@ for p in libwebkit2gtk-4.1-0 libayatana-appindicator3-1; do
         bad "$p missing"
     fi
 done
+
+step "Phase 9c: network panel runtime + Quickshell build deps"
+# install.sh builds Quickshell from source when no prebuilt release fits, so
+# both the runtime and the build dependencies have to resolve.
+for p in libqt6svg6 qt6-wayland libjemalloc2 \
+    qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+    qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript \
+    iw iputils-ping qrencode \
+    cmake ninja-build g++ \
+    qt6-base-dev qt6-base-private-dev qt6-declarative-dev qt6-declarative-private-dev \
+    qt6-wayland-dev qt6-wayland-private-dev qt6-shadertools-dev spirv-tools \
+    libcli11-dev libdrm-dev libjemalloc-dev libwayland-dev wayland-protocols; do
+    if apt-cache show "$p" >/dev/null 2>&1; then
+        ok "$p available"
+    else
+        bad "$p missing"
+    fi
+done
+
+step "External: Quickshell source (Phase 9c fallback build)"
+if git ls-remote --exit-code --tags https://github.com/quickshell-mirror/quickshell.git v0.3.2 >/dev/null 2>&1; then
+    ok "quickshell v0.3.2 tag reachable"
+else
+    bad "quickshell v0.3.2 tag unreachable"
+fi
 
 step "External: Rust toolchain installer URL"
 if curl -fsSI -o /dev/null https://sh.rustup.rs ; then

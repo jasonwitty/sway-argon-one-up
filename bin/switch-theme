@@ -80,6 +80,9 @@ apply_theme() {
     render_template "$TEMPLATES_DIR/wob.ini" "$HOME/.config/wob/wob.ini"
     mkdir -p "$HOME/.config/system-dashboard"
     render_template "$TEMPLATES_DIR/dashboard.css" "$HOME/.config/system-dashboard/dashboard.css"
+    # The panel watches this file, so it recolours live.
+    mkdir -p "$HOME/.config/quickshell/network-panel/theme"
+    render_template "$TEMPLATES_DIR/network-panel-colors.toml" "$HOME/.config/quickshell/network-panel/theme/colors.toml"
 
     # Update waybar config calendar colors
     sed -i "s/background=\\\\\"#[0-9a-fA-F]\{6\}\\\\\"/background=\\\\\"#${BLUE}\\\\\"/g; s/color=\\\\\"#[0-9a-fA-F]\{6\}\\\\\"/color=\\\\\"#${BASE}\\\\\"/g" "$HOME/.config/waybar/config"

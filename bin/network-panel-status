@@ -102,10 +102,10 @@ print_verbose() {
   printf 'gateway\t%s\n' "$gw"
 
   if [[ -r /sys/class/net/$iface/statistics/rx_bytes ]]; then
-    printf 'rx_bytes\t%s\n' "$(cat /sys/class/net/$iface/statistics/rx_bytes)"
+    printf 'rx_bytes\t%s\n' "$(cat "/sys/class/net/$iface/statistics/rx_bytes")"
   fi
   if [[ -r /sys/class/net/$iface/statistics/tx_bytes ]]; then
-    printf 'tx_bytes\t%s\n' "$(cat /sys/class/net/$iface/statistics/tx_bytes)"
+    printf 'tx_bytes\t%s\n' "$(cat "/sys/class/net/$iface/statistics/tx_bytes")"
   fi
 
   if [[ -d /sys/class/net/$iface/wireless ]]; then
@@ -123,8 +123,8 @@ print_verbose() {
     fi
   else
     printf 'type\tethernet\n'
-    [[ -r /sys/class/net/$iface/speed ]] && printf 'speed\t%s\n' "$(cat /sys/class/net/$iface/speed)"
-    [[ -r /sys/class/net/$iface/duplex ]] && printf 'duplex\t%s\n' "$(cat /sys/class/net/$iface/duplex)"
+    [[ -r /sys/class/net/$iface/speed ]] && printf 'speed\t%s\n' "$(cat "/sys/class/net/$iface/speed")"
+    [[ -r /sys/class/net/$iface/duplex ]] && printf 'duplex\t%s\n' "$(cat "/sys/class/net/$iface/duplex")"
   fi
 
   print_ping_samples "$gw"

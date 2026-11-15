@@ -129,7 +129,7 @@ case "${1,,}" in
     if ! split_servers "$servers" || [[ -z $ipv4$ipv6 ]]; then
       echo "No DNS servers set." >&2
       # Launched in its own terminal from the panel; leave the message up.
-      [[ -t 0 ]] && read -r -n 1 -s -p "Press any key to close." || true
+      if [[ -t 0 ]]; then read -r -n 1 -s -p "Press any key to close." || true; fi
       exit 1
     fi
     set_dns "$ipv4" "$ipv6"

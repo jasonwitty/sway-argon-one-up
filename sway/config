@@ -46,14 +46,14 @@ exec ~/.local/bin/idle-toggle on
 input type:touchpad {
     tap enabled
     natural_scroll enabled
-    # libinput's disable-while-typing is intentionally OFF here — the AMIRA
-    # exposes keyboard and touchpad on different USB interfaces (different
-    # vid:pid), so libinput can't correlate them and its DWT was getting
-    # stuck (touchpad would stop responding, sometimes for many minutes).
-    # The Rust trackpad-guard daemon handles this correctly by watching
-    # AMIRA evdev events directly.
-    dwt disabled
-    dwtp disabled
+    # libinput's own disable-while-typing. The AMIRA exposes keyboard and
+    # touchpad as separate USB devices, so libinput only pairs them because
+    # touchpad-native/ tags both as internal (quirks file + udev rule,
+    # squeeby's approach). `touchpad-mode toggle` — the dashboard tile and
+    # Mod+Shift+G — rewrites these two lines, so keep them one per line.
+    # `touchpad-mode guard` goes back to the trackpad-guard daemon.
+    dwt enabled
+    dwtp enabled
 }
 
 ### Wob (overlay bar for brightness/volume)
@@ -259,10 +259,10 @@ bindsym $mod+r mode "resize"
     # believes more fingers are down than really are — which is what lifting your
     # finger and putting it back down fixes by hand.
     bindsym $mod+Shift+u exec sudo -n /usr/bin/systemctl kill -s SIGUSR2 trackpad-guard.service
-    # Trackpad guard (beta) on/off. Same wrapper the dashboard tile calls,
-    # so the on/off notification is consistent and this works even when the
-    # cursor is wedged and you can't click the dashboard switch.
-    bindsym $mod+Shift+g exec /usr/local/bin/trackpad-guard-toggle
+    # Disable-while-typing on/off (libinput's own). Same command the
+    # dashboard tile runs, so the notification is consistent. The two
+    # rescue bindings above only do anything in trackpad-guard mode.
+    bindsym $mod+Shift+g exec /usr/local/bin/touchpad-mode toggle
     # Help overlay
     bindsym $mod+Shift+h exec ~/.local/bin/sway-help
     # Brave (Origin — debloated build; flags are RPi/Wayland perf tuning, still needed)

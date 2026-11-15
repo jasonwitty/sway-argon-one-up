@@ -28,7 +28,7 @@ struct Snapshot {
     fan: fan::FanState,
     brightness: brightness::BrightnessState,
     volume: volume::VolumeState,
-    trackpad: trackpad::TrackpadGuardState,
+    trackpad: trackpad::TrackpadState,
 }
 
 #[tauri::command]
@@ -78,7 +78,7 @@ fn open_fan_picker() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn toggle_trackpad_guard() -> Result<(), String> {
+fn toggle_touchpad_dwt() -> Result<(), String> {
     trackpad::toggle()
 }
 
@@ -154,7 +154,7 @@ fn main() {
             cycle_idle,
             open_theme_picker,
             open_fan_picker,
-            toggle_trackpad_guard,
+            toggle_touchpad_dwt,
             set_brightness,
             set_volume
         ])

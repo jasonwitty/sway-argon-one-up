@@ -1,8 +1,12 @@
 #!/bin/bash
 # touchpad-mode — choose how typing protection for the touchpad is done.
 #
+#   touchpad-mode on       turn disable-while-typing on   (native mode)
+#   touchpad-mode off      turn disable-while-typing off  (native mode)
+#   touchpad-mode toggle   flip it; what the dashboard tile and Mod+Shift+G run
+#
 #   touchpad-mode native   libinput's own disable-while-typing (no daemon)
-#   touchpad-mode guard    the trackpad-guard daemon (the previous default)
+#   touchpad-mode guard    the trackpad-guard daemon (likely deprecated)
 #   touchpad-mode status   show which one is in effect
 #
 # "native" is squeeby's approach: tell libinput the AMIRA keyboard and touchpad
@@ -10,6 +14,10 @@
 # the libinput quirks file and the service, and it edits the dwt/dwtp lines in
 # your sway config. Log out and back in afterwards: libinput reads quirks only
 # when a device is added, and the keyboard is already open in this session.
+#
+# on / off / toggle need no root and no re-login: they flip sway's dwt/dwtp
+# setting live and in the sway config, so the choice survives a reload and a
+# reboot. The quirks file and udev rule stay installed either way.
 
 set -euo pipefail
 
@@ -19,6 +27,7 @@ QUIRKS=/etc/libinput/local-overrides.quirks
 LEGACY_RULE=/etc/udev/rules.d/99-amira-dwt.rules
 SWAY_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/sway/config"
 MARKER="Installed to /etc/libinput/local-overrides.quirks by touchpad-mode"
+HOTKEY="Mod+Shift+G"
 
 set_sway_dwt() {
     # Only the two lines inside the `input type:touchpad` block.
@@ -27,6 +36,47 @@ set_sway_dwt() {
     if [[ -n ${SWAYSOCK:-} ]]; then
         swaymsg input type:touchpad dwt "$1" >/dev/null || true
         swaymsg input type:touchpad dwtp "$1" >/dev/null || true
+    fi
+}
+
+notify() {
+    # Never fail the switch because the user couldn't be told about it.
+    command -v notify-send >/dev/null 2>&1 || return 0
+    notify-send -a "touchpad-mode" -i input-touchpad "$@" || true
+}
+
+# What sway has applied to the touchpad right now: enabled, disabled, or
+# nothing when sway isn't reachable or there is no touchpad.
+live_dwt() {
+    swaymsg -t get_inputs --raw 2>/dev/null |
+        jq -r 'first(.[] | select(.type == "touchpad") | .libinput.dwt) // empty' 2>/dev/null || true
+}
+
+switch_dwt() {
+    local want=$1
+    if systemctl is-active --quiet trackpad-guard.service; then
+        notify "Touchpad is in trackpad-guard mode" "Run: touchpad-mode native"
+        echo "touchpad-mode: trackpad-guard is running; run 'touchpad-mode native' first" >&2
+        exit 1
+    fi
+    if [[ $want == toggle ]]; then
+        case "$(live_dwt)" in
+            enabled) want=disabled ;;
+            disabled) want=enabled ;;
+            *)
+                echo "touchpad-mode: can't read the touchpad's state from sway" >&2
+                exit 1
+                ;;
+        esac
+    fi
+    set_sway_dwt "$want"
+    if [[ $want == enabled ]]; then
+        notify "Disable-while-typing on" "Toggle: $HOTKEY"
+        if [[ ! -e $QUIRKS || ! -e $RULE ]]; then
+            echo "touchpad-mode: the quirks file or udev rule is missing; run 'touchpad-mode native' or typing won't pause the touchpad" >&2
+        fi
+    else
+        notify "Disable-while-typing off" "Touchpad stays live while you type  ·  Toggle: $HOTKEY"
     fi
 }
 
@@ -72,14 +122,18 @@ status() {
         printf 'sway config:            %s\n' \
             "$(sed -n -E '/^input type:touchpad \{/,/^\}/ s/^\s*(dwtp? (enabled|disabled))$/\1/p' "$SWAY_CONFIG" | paste -sd, -)"
     fi
+    printf 'live in sway:           dwt %s\n' "$(d=$(live_dwt); echo "${d:-unknown}")"
 }
 
 case "${1:-status}" in
+    on) switch_dwt enabled ;;
+    off) switch_dwt disabled ;;
+    toggle) switch_dwt toggle ;;
     native) native ;;
     guard) guard ;;
     status) status ;;
     *)
-        echo "Usage: touchpad-mode [native|guard|status]" >&2
+        echo "Usage: touchpad-mode [on|off|toggle|native|guard|status]" >&2
         exit 2
         ;;
 esac

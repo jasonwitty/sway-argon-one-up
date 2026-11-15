@@ -1,5 +1,13 @@
 # trackpad-guard
 
+> **Likely deprecated.** Typing protection on the Argon ONE UP now comes from
+> libinput's own disable-while-typing, set up by [`touchpad-native/`](../touchpad-native/)
+> (squeeby's approach) — no daemon. The installer still builds and installs
+> trackpad-guard, but leaves it disabled; the dashboard tile and `Mod+Shift+G`
+> no longer control it. It is kept for now as a fallback: `touchpad-mode guard`
+> switches back to it, `touchpad-mode native` away from it. Expect it to be
+> removed once native mode has had more time in daily use.
+
 A lightweight Rust daemon that disables the sway touchpad while typing on USB combo keyboard/touchpad devices like the AMIRA keyboard in the [Argon ONE UP](https://argon40.com/products/argon-one-up-cm5-laptop-core-system) case.
 
 ## Why this exists

@@ -271,9 +271,11 @@ function renderTrackpad(t) {
   // optimistic state is reflected in `dataset.pending` until the next poll.
   if (sw.dataset.pending !== "1") sw.checked = t.active;
   value.textContent = t.active ? "On" : "Off";
-  sub.textContent = t.active
-    ? "Disabling touchpad while typing"
-    : "Always-on touchpad (no DWT)";
+  sub.textContent = t.guard
+    ? "trackpad-guard daemon in use (touchpad-mode native to switch)"
+    : t.active
+      ? "Paused while you type"
+      : "Stays live while you type";
 }
 
 // While the user is dragging the slider, don't fight them by overwriting
@@ -331,13 +333,13 @@ bindSlider("volume-slider", "set_volume");
   const sw = document.getElementById("trackpad-switch");
   sw.addEventListener("change", () => {
     sw.dataset.pending = "1";
-    invoke("toggle_trackpad_guard")
+    invoke("toggle_touchpad_dwt")
       .catch((e) => {
-        console.error("toggle_trackpad_guard failed", e);
+        console.error("toggle_touchpad_dwt failed", e);
         sw.checked = !sw.checked; // revert
       })
       .finally(() => {
-        // Re-sync from backend shortly after; systemd takes ~100-300ms.
+        // Re-sync from backend shortly after the switch has landed in sway.
         setTimeout(() => {
           sw.dataset.pending = "0";
           refresh();

@@ -577,12 +577,29 @@ info "Installing trackpad-guard systemd system unit..."
 sudo install -m 0644 "$REPO_DIR/trackpad-guard/systemd/trackpad-guard.service" \
     /etc/systemd/system/trackpad-guard.service
 sudo systemctl daemon-reload
-# Beta opt-in: trackpad-guard ships disabled. The user enables it from the
-# system-dashboard tile or with Mod+Shift+G. Force-disable on every install
-# (including upgrades) so the beta state is consistent — if you relied on
-# it being on, just toggle it back on once after the upgrade.
+# trackpad-guard is likely deprecated: it stays installed but disabled, as the
+# fallback behind `touchpad-mode guard`. Typing protection now comes from
+# libinput's own disable-while-typing, set up just below.
 sudo systemctl disable --now trackpad-guard.service 2>/dev/null || true
-success "trackpad-guard installed (disabled by default — enable via dashboard or Mod+Shift+G)"
+success "trackpad-guard installed (disabled — fallback only, see touchpad-mode guard)"
+
+# Native libinput disable-while-typing (squeeby's approach): a quirks file and
+# a udev rule tag the AMIRA keyboard and touchpad as internal so libinput
+# pairs them. On by default; the dashboard tile and Mod+Shift+G turn it off
+# and on with `touchpad-mode toggle`. Takes effect at the next login.
+info "Installing native touchpad disable-while-typing..."
+sudo install -d -m 0755 /usr/local/share/touchpad-native
+sudo install -m 0644 "$REPO_DIR/touchpad-native/local-overrides.quirks" \
+    "$REPO_DIR/touchpad-native/99-argon-one-touchpad.rules" \
+    /usr/local/share/touchpad-native/
+sudo install -m 0755 "$REPO_DIR/touchpad-native/touchpad-mode" \
+    /usr/local/share/touchpad-native/touchpad-mode
+sudo ln -sf /usr/local/share/touchpad-native/touchpad-mode /usr/local/bin/touchpad-mode
+if /usr/local/bin/touchpad-mode native; then
+    success "Native disable-while-typing installed (toggle via dashboard or Mod+Shift+G)"
+else
+    warn "Could not set up native disable-while-typing — run 'touchpad-mode native' after install"
+fi
 
 # With argon-battery-rs owning battery polling + CW2217 self-heal, and
 # argon-lid-monitor owning lid events, Argon's Python daemons have nothing

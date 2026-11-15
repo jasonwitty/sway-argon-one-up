@@ -1,8 +1,8 @@
 # touchpad-native
 
 Typing protection for the Argon ONE UP touchpad using libinput's own
-disable-while-typing, with no daemon. An alternative to `trackpad-guard/`,
-under evaluation.
+disable-while-typing, with no daemon. This is what the installer sets up;
+`trackpad-guard/` is the earlier daemon, kept for now as a fallback.
 
 The approach is **squeeby's**: the AMIRA keyboard and touchpad are separate
 USB devices, so libinput treats them as unrelated and never pairs them. Tag
@@ -12,11 +12,12 @@ both as internal and it pairs them itself.
 |---|---|---|
 | `local-overrides.quirks` | `/etc/libinput/local-overrides.quirks` | Tags the keyboard internal; makes libinput ignore the touchpad's unreliable palm label |
 | `99-argon-one-touchpad.rules` | `/etc/udev/rules.d/` | Tags the touchpad internal |
-| `touchpad-mode` | run from here | `native` / `guard` / `status`: switches between this and trackpad-guard, including the `dwt` / `dwtp` lines in the sway config |
+| `touchpad-mode` | `/usr/local/bin/` (symlink) | `on` / `off` / `toggle`: disable-while-typing on or off, live and in the sway config; what the dashboard tile and `Mod+Shift+G` run. `native` / `guard` / `status`: switches between this and trackpad-guard |
 
 ```
-touchpad-native/touchpad-mode native   # then log out and back in
-touchpad-native/touchpad-mode guard    # back to trackpad-guard
+touchpad-mode toggle   # disable-while-typing on/off, no root, no re-login
+touchpad-mode native   # set this up (the installer does); then log out and back in
+touchpad-mode guard    # back to trackpad-guard
 ```
 
 Two things beyond squeeby's original steps:

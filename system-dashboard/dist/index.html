@@ -91,6 +91,13 @@
         </label>
       </div>
       <div class="sub" id="trackpad-sub">reading…</div>
+      <div class="row gate"
+           title="How long touchpad input is ignored after a keystroke. 0 disables the gate. Applies within ~1s, no restart.">
+        <span class="label">Typing gate</span>
+        <input class="slider" type="range" id="gate-slider"
+               min="0" max="500" step="5" value="200" />
+        <span class="value" id="gate-value">—</span>
+      </div>
     </section>
   </main>
 

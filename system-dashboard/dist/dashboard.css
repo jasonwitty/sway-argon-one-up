@@ -51,15 +51,21 @@ html, body {
   -webkit-user-select: none;
 }
 
+/* Vertical rhythm is tuned so all eight cards fit the 690px window WITHOUT
+   scrolling at 1.6x output scale, where the compositor caps the window at
+   roughly 715 logical px (1200 physical / 1.6, less waybar). Adding a row to
+   the trackpad card overflowed that, and growing the window could not fix it
+   — the screen was already the limit. If you add another card or row, take
+   the space out of here rather than raising the window height. */
 .dashboard {
-  padding: 18px 20px;
+  padding: 14px 20px;
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 9px;
 }
 
 header {
-  padding: 0 4px 4px;
+  padding: 0 4px 2px;
 }
 
 header .title {
@@ -72,7 +78,7 @@ header .title {
 .card {
   background: var(--surface-0);
   border-radius: 12px;
-  padding: 12px 16px;
+  padding: 10px 16px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -271,6 +277,52 @@ header .title {
 .card.brightness .slider::-webkit-slider-thumb { background: var(--brightness); }
 .card.volume .slider::-webkit-slider-thumb { background: var(--volume); }
 .card.volume.muted .slider::-webkit-slider-thumb { background: var(--volume-muted); }
+.card.trackpad.on .slider::-webkit-slider-thumb { background: var(--trackpad-on); }
+.card.trackpad.off .slider::-webkit-slider-thumb { background: var(--trackpad-off); }
+
+/* The gate has no effect while the guard is off, so the control says so. */
+.slider:disabled,
+.slider:disabled::-webkit-slider-thumb {
+  cursor: default;
+}
+.slider:disabled {
+  opacity: 0.4;
+}
+
+/* Compact inline control (trackpad card's typing gate).
+   The gate is secondary to the card's on/off state, so it reads at .sub's
+   size and shares .sub's 32px icon-column indent rather than taking a
+   full-width row of its own — which is what pushed the card off the bottom
+   of the window at 1.6x output scale. */
+.row.gate {
+  gap: 8px;
+}
+
+.row.gate .label {
+  font-size: 12px;
+  font-weight: 400;
+  padding-left: 32px;
+  /* Don't grow: the slider should absorb the free space, not the label. */
+  flex-grow: 0;
+  white-space: nowrap;
+}
+
+.row.gate .slider {
+  /* Undo the stacked-slider geometry — this one is a row item. */
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 60px;
+  margin: 0;
+}
+
+.row.gate .value {
+  font-size: 12px;
+  /* Fixed width and tabular figures so the slider doesn't jump a few px
+     as the readout goes "Off" -> "45 ms" -> "500 ms" while dragging. */
+  min-width: 46px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Theme palette swatches */
 .swatches {

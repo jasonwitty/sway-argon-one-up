@@ -13,7 +13,7 @@
 //!    capabilities (vid:pid, keys, relative axes, properties).
 //! 4. Each event batch from the real touchpad is forwarded byte-for-byte
 //!    to the virtual device — UNLESS a keyboard event has been seen in
-//!    the last KEY_TYPING_WINDOW (185 ms), in which case the batch is
+//!    the last KEY_TYPING_WINDOW (200 ms), in which case the batch is
 //!    silently dropped.
 //!
 //! From sway/libinput's perspective there's only the virtual device,
@@ -59,9 +59,143 @@ const TOUCHPAD_USB_VENDOR_STR: &str = "6080";
 
 /// Touchpad events arriving within this window of the most recent
 /// keyboard event are dropped (typing → palm protection).
-const KEY_TYPING_WINDOW: Duration = Duration::from_millis(185);
+///
+/// This is only the DEFAULT. The effective value is read from
+/// [`CONFIG_PATH`] at startup and re-read whenever that file changes, so it
+/// can be A/B tested without a restart — see `load_typing_gate`.
+///
+/// Tuning history, so it doesn't get re-derived: 150ms → 200ms → 185ms
+/// (2026-08-03) → back to 200ms, Jason's call on 2026-08-19 after living on
+/// 185ms for two weeks. Don't change this default without asking him; use the
+/// config file for experiments.
+const KEY_TYPING_WINDOW: Duration = Duration::from_millis(200);
+
+/// Runtime tunables, written by `trackpad-guard-tune` (and through it by the
+/// system-dashboard trackpad tile). Format is one `key=value` per line, `#`
+/// for comments — deliberately not JSON, so this crate keeps its two-dep
+/// footprint (evdev + signal-hook) for anyone vendoring it on its own.
+///
+/// Reloaded by mtime poll rather than a signal: the daemon runs as root and
+/// the dashboard does not, so a non-root caller cannot signal us — same
+/// reasoning as argon-fan's config. Polling also means the value that lands
+/// is the value on disk, with no signal/read race.
+const CONFIG_PATH: &str = "/etc/trackpad-guard/config";
+
+/// Accepted range for `typing_gate_ms`. 0 disables the gate entirely (a
+/// useful control case when testing whether the gate is implicated in a
+/// stuck report at all). The ceiling exists so a fat-fingered edit cannot
+/// mute the touchpad for seconds after every keystroke.
+const TYPING_GATE_MAX_MS: u64 = 500;
+
+/// Read `typing_gate_ms` from [`CONFIG_PATH`]. Returns `None` when the file
+/// is absent, unparseable, or has no such key — callers fall back to
+/// [`KEY_TYPING_WINDOW`]. Out-of-range values are clamped rather than
+/// rejected: a bad number should still leave a working trackpad.
+fn load_typing_gate() -> Option<Duration> {
+    let body = std::fs::read_to_string(CONFIG_PATH).ok()?;
+    parse_typing_gate(&body)
+}
+
+/// Read `gate_taps` from [`CONFIG_PATH`]; defaults to ON when absent or
+/// unparseable. Set it to `false` to get the pre-2026-08-20 behavior, where a
+/// contact landing inside the typing gate was forwarded and libinput could
+/// synthesize a tap from it — useful for A/B testing the quarantine without
+/// rebuilding. See [`Quarantine`].
+fn load_gate_taps() -> bool {
+    std::fs::read_to_string(CONFIG_PATH)
+        .ok()
+        .and_then(|body| parse_gate_taps(&body))
+        .unwrap_or(true)
+}
+
+fn load_trust_tool_palm() -> bool {
+    std::fs::read_to_string(CONFIG_PATH)
+        .ok()
+        .and_then(|body| parse_bool_key(&body, "trust_tool_palm"))
+        .unwrap_or(false)
+}
+
+fn parse_gate_taps(body: &str) -> Option<bool> {
+    parse_bool_key(body, "gate_taps")
+}
+
+fn parse_bool_key(body: &str, key: &str) -> Option<bool> {
+    parse_config_value(body, key).and_then(|v| match v.to_ascii_lowercase().as_str() {
+        "true" | "1" | "on" | "yes" => Some(true),
+        "false" | "0" | "off" | "no" => Some(false),
+        other => {
+            eprintln!("trackpad-guard: bad gate_taps={other:?}, keeping the default");
+            None
+        }
+    })
+}
+
+/// Last value for `key` in a `key=value` config body, ignoring `#` comments
+/// and surrounding whitespace. Last wins so a hand-appended line overrides an
+/// earlier one rather than being silently ignored.
+fn parse_config_value(body: &str, key: &str) -> Option<String> {
+    body.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| l.split_once('='))
+        .filter(|(k, _)| k.trim() == key)
+        .map(|(_, v)| v.trim().to_string())
+        .next_back()
+}
+
+/// Split out from [`load_typing_gate`] so it can be tested without a file at
+/// the real (root-owned) config path. Shares `parse_config_value` with
+/// `gate_taps` so both keys follow the same last-one-wins rule — they used to
+/// disagree, first-wins here and last-wins there, which a test caught.
+fn parse_typing_gate(body: &str) -> Option<Duration> {
+    let raw = parse_config_value(body, "typing_gate_ms")?;
+    match raw.parse::<u64>() {
+        Ok(ms) => {
+            let clamped = ms.min(TYPING_GATE_MAX_MS);
+            if clamped != ms {
+                eprintln!("trackpad-guard: typing_gate_ms={ms} out of range, clamped to {clamped}");
+            }
+            Some(Duration::from_millis(clamped))
+        }
+        Err(e) => {
+            eprintln!("trackpad-guard: bad typing_gate_ms={raw:?} ({e})");
+            None
+        }
+    }
+}
 
 const DISCOVER_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Mid-motion stall reporting (LOG ONLY — never wire recovery to these).
+///
+/// A stall is a silence that follows real motion. The hard part is that the
+/// freeze class we are hunting begins with a FALSE lift, so at onset it is
+/// byte-for-byte identical to a real lift followed by the user going idle:
+/// `BTN_TOUCH=0, slots=[none], tool=none`. Gating on `BTN_TOUCH == 1` would
+/// therefore silence the exact class this instrumentation exists to measure.
+///
+/// What does separate them is knowable only afterwards: how long the silence
+/// lasted, and whether the user was demonstrably still at the machine while
+/// the pad was mute. So the verdict is made at RESUME, using:
+///   * silence shorter than `STALL_REPORT_MAX` — anything longer is idle. The
+///     noise this replaces: 62 "stalls" in one boot whose longest silences were
+///     32530s and 41750s, i.e. overnight. 30s is ~2x the longest stall actually
+///     observed (the measured set is 1.8, 2.7, 2.8, 4.27, 10.7, 15.1s). A stall
+///     that never resumes produces no resume line at all — that case is covered
+///     by the immediate finger-down line below and by the wedge watchdog.
+///   * finger still down at onset, OR a keystroke arrived during the silence.
+///     Typing through a dead pad is presence; an untouched pad emitting nothing
+///     is just an untouched pad.
+///
+/// Residual false positive, deliberately accepted: move the pointer, then type
+/// for a few seconds without touching the pad, then move it again. That reads as
+/// presence during silence and will be reported. So treat these lines as a RATE
+/// to compare across a config change (e.g. before/after the usbhid ALWAYS_POLL
+/// quirk), not as a list of confirmed freezes. `typed during the silence: false`
+/// with a short duration is the strongest single candidate.
+const STALL_LOG_SILENCE: Duration = Duration::from_millis(800);
+const STALL_LOG_MIN_RUN: u32 = 20;
+const STALL_REPORT_MAX: Duration = Duration::from_secs(30);
 
 /// Phantom-contact / stuck-stream filter. Catches failure modes where
 /// the AMIRA touchpad delivers a steady event stream that translates to
@@ -519,6 +653,20 @@ impl SlotGuard {
     /// be polled from the watchdog. A synthetic release (emit_slot_releases)
     /// resyncs libinput; no USB rebind is needed because the firmware already
     /// believes the finger is up (it sent BTN_TOUCH=0) and isn't streaming.
+    /// Does our model of libinput's view hold no contact whatsoever? Gates the
+    /// tap quarantine, which only handles the lone-contact case. `btn_touch` of
+    /// None counts as idle: that is the startup state, before any contact has
+    /// been forwarded.
+    fn sees_no_contact(&self) -> bool {
+        self.btn_touch != Some(1)
+            && !self.tool_finger
+            && !self.tool_doubletap
+            && !self.tool_tripletap
+            && !self.tool_quadtap
+            && !self.tool_quinttap
+            && self.active.iter().all(|s| s.is_none())
+    }
+
     fn lifted_ghost_slots(&self, now: Instant, grace: Duration) -> Vec<usize> {
         // Only when the forwarded contact count is unambiguously zero.
         if self.btn_touch != Some(0) {
@@ -590,6 +738,237 @@ fn batch_changes_contact(batch: &[InputEvent]) -> bool {
         EventSummary::AbsoluteAxis(_, code, _value) => code == AbsoluteAxisCode::ABS_MT_TRACKING_ID,
         _ => false,
     })
+}
+
+/// Does this batch report a finger arriving, a finger leaving, or both? Both
+/// happens on a finger-count change — a second finger landing emits
+/// BTN_TOOL_FINGER=0 together with BTN_TOOL_DOUBLETAP=1 — which is why these
+/// are two flags rather than one direction.
+/// ABS_MT_TOOL_TYPE values. The kernel/firmware uses these to say what it thinks
+/// is touching the pad.
+const MT_TOOL_FINGER: i32 = 0;
+const MT_TOOL_PALM: i32 = 2;
+
+/// Rewrite firmware "this is a palm" verdicts to "finger". Returns how many
+/// events were changed.
+///
+/// THE FREEZE THIS FIXES (captured 2026-08-27 09:26-09:30, 31 frozen seconds):
+/// libinput emitted NOTHING for the pad — no motion, no scroll, no gesture, no
+/// button — while the wire carried ~50 well-formed motion frames per second with
+/// fresh tracking ids. Its verbose log gave the verdict for every contact:
+///
+///   event23 - palm: touch 0 (TOUCH_BEGIN), palm detected (tool-palm)
+///   event23 - palm: touch 0 (TOUCH_END),   palm detected (tool-palm)
+///
+/// `tool-palm` means the DEVICE said so, via ABS_MT_TOOL_TYPE=MT_TOOL_PALM.
+/// libinput obeys that absolutely: the touch is discarded for its whole life,
+/// silently, and nothing downstream can override it. We forward the real pad's
+/// stream byte-for-byte, tool type included, so the AMIRA's bogus palm verdicts
+/// went straight through and the cursor froze until the contact ended.
+///
+/// This device gives libinput NO other palm signal to work with — it reports
+/// neither ABS_MT_TOUCH_MAJOR nor ABS_MT_PRESSURE (checked: capability mask
+/// 2e0800000000003 has bit 55 ABS_MT_TOOL_TYPE, but not 48 or 58). So there are
+/// no size or pressure thresholds for a libinput quirks file to tune, and the
+/// only place to correct it is here, on the stream we already own.
+///
+/// Why rewrite rather than drop the event: the axis is part of the contact's
+/// state, and libinput tracks it per slot. Dropping it would leave whatever value
+/// libinput last saw for that slot in place; setting FINGER is unambiguous.
+fn rewrite_tool_palm(batch: &mut [InputEvent]) -> usize {
+    let mut changed = 0;
+    for ev in batch.iter_mut() {
+        if let EventSummary::AbsoluteAxis(_, code, value) = ev.destructure() {
+            if code == AbsoluteAxisCode::ABS_MT_TOOL_TYPE && value == MT_TOOL_PALM {
+                *ev = InputEvent::new(EventType::ABSOLUTE.0, code.0, MT_TOOL_FINGER);
+                changed += 1;
+            }
+        }
+    }
+    changed
+}
+
+fn batch_landing_lift(batch: &[InputEvent]) -> (bool, bool) {
+    let mut landing = false;
+    let mut lift = false;
+    for ev in batch {
+        match ev.destructure() {
+            EventSummary::Key(_, code, value) => {
+                let counts = code == KeyCode::BTN_TOUCH
+                    || code == KeyCode::BTN_TOOL_FINGER
+                    || code == KeyCode::BTN_TOOL_DOUBLETAP
+                    || code == KeyCode::BTN_TOOL_TRIPLETAP
+                    || code == KeyCode::BTN_TOOL_QUADTAP
+                    || code == KeyCode::BTN_TOOL_QUINTTAP;
+                if counts {
+                    match value {
+                        1 => landing = true,
+                        0 => lift = true,
+                        _ => {}
+                    }
+                }
+            }
+            EventSummary::AbsoluteAxis(_, code, value)
+                if code == AbsoluteAxisCode::ABS_MT_TRACKING_ID =>
+            {
+                if value >= 0 {
+                    landing = true;
+                } else {
+                    lift = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    (landing, lift)
+}
+
+/// A touch-down withheld from libinput because it landed while the typing gate
+/// was closed.
+///
+/// Why withhold instead of forwarding: tap-to-click is synthesized by LIBINPUT
+/// from a touch-down/touch-up pair, and a tap consists of nothing but
+/// contact-count changes — exactly what `batch_changes_contact` forwards even
+/// while gated. So a palm brushing the pad mid-sentence produced a real click
+/// at wherever the pointer already happened to be, while the motion that would
+/// have moved the pointer was being dropped. Reported by a user 2026-08-20;
+/// raising KEY_TYPING_WINDOW cannot help it, and widening the window widens the
+/// exposure.
+///
+/// The rule: a contact landing while gated is not shown to libinput until it
+/// proves it is not a tap by MOVING. If it lifts first, libinput never learns
+/// it existed — so there is no tap to synthesize, and no count desync is
+/// possible either, because you cannot be out of sync about a contact you never
+/// saw. That is what makes this compatible with the invariant
+/// `batch_changes_contact` exists to protect: a lift is still never dropped for
+/// any contact libinput has actually been told about.
+struct Quarantine {
+    /// The withheld touch-down frame, verbatim.
+    down: Vec<InputEvent>,
+    /// Newest value of each descriptive absolute axis seen while withheld
+    /// (position, pressure, touch major, ...), keyed by raw axis code.
+    /// ABS_MT_SLOT and ABS_MT_TRACKING_ID are excluded: they identify the
+    /// contact rather than describe it, and must survive the rewrite intact.
+    latest_abs: Vec<(u16, i32)>,
+    /// When the contact landed — logged when a tap is suppressed.
+    at: Instant,
+}
+
+impl Quarantine {
+    fn new(down: Vec<InputEvent>, at: Instant) -> Self {
+        Self {
+            down,
+            latest_abs: Vec::new(),
+            at,
+        }
+    }
+
+    fn observe(&mut self, batch: &[InputEvent]) {
+        for ev in batch {
+            if let EventSummary::AbsoluteAxis(_, code, value) = ev.destructure() {
+                if code == AbsoluteAxisCode::ABS_MT_SLOT
+                    || code == AbsoluteAxisCode::ABS_MT_TRACKING_ID
+                {
+                    continue;
+                }
+                match self.latest_abs.iter_mut().find(|(c, _)| *c == code.0) {
+                    Some(entry) => entry.1 = value,
+                    None => self.latest_abs.push((code.0, value)),
+                }
+            }
+        }
+    }
+
+    /// The withheld frame, repositioned to wherever the finger is now. Without
+    /// this, revealing a contact that drifted during the gate would show
+    /// libinput the landing point and then jump straight to the current
+    /// position — a visible cursor jump of however far the finger slid while
+    /// the gate was closed.
+    fn frame(&self) -> Vec<InputEvent> {
+        self.down
+            .iter()
+            .map(|ev| match ev.destructure() {
+                EventSummary::AbsoluteAxis(_, code, _)
+                    if code != AbsoluteAxisCode::ABS_MT_SLOT
+                        && code != AbsoluteAxisCode::ABS_MT_TRACKING_ID =>
+                {
+                    match self.latest_abs.iter().find(|(c, _)| *c == code.0) {
+                        Some((_, v)) => InputEvent::new(EventType::ABSOLUTE.0, code.0, *v),
+                        None => *ev,
+                    }
+                }
+                _ => *ev,
+            })
+            .collect()
+    }
+}
+
+/// What the tap quarantine wants done with the current batch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TapGate {
+    /// Withhold this touch-down; start a quarantine.
+    HoldNew,
+    /// A quarantine is open and this batch keeps it open; drop the batch.
+    KeepHeld,
+    /// The withheld contact ended without ever moving: drop the quarantine AND
+    /// this batch. libinput saw neither half, so nothing is left inconsistent.
+    Discard,
+    /// Reveal the withheld contact, then handle this batch normally.
+    FlushThen,
+    /// No quarantine involvement — the pre-existing gate rules decide.
+    Passthrough,
+}
+
+/// Pure ordering rules for the quarantine, kept free of I/O and device state so
+/// they can be unit tested (see the tests at the bottom of this file).
+///
+/// `libinput_idle` means our model of libinput's view holds NO contact at all.
+/// The quarantine is deliberately limited to that case: BTN_TOUCH and the
+/// BTN_TOOL_* flags are per-device aggregates, not per-slot, so hiding one
+/// finger out of several would mean synthesizing corrected aggregate counts —
+/// a much larger change. With another finger already live, behavior is exactly
+/// what it was before this existed.
+fn tap_gate_decision(
+    gate_taps: bool,
+    typing: bool,
+    quarantined: bool,
+    libinput_idle: bool,
+    has_landing: bool,
+    has_lift: bool,
+) -> TapGate {
+    if !gate_taps {
+        // Toggled off mid-touch: reveal anything held, so libinput is not left
+        // missing a contact that is still physically down.
+        return if quarantined {
+            TapGate::FlushThen
+        } else {
+            TapGate::Passthrough
+        };
+    }
+    if quarantined {
+        // A lift with no landing ends the withheld contact without it ever
+        // having moved: that is the tap (or rested palm) we are here to stop.
+        if has_lift && !has_landing {
+            return TapGate::Discard;
+        }
+        // Anything more complex than a lone contact — a second finger arriving —
+        // hands back to the old behavior, so reveal what we held first.
+        if has_landing {
+            return TapGate::FlushThen;
+        }
+        // Motion. Still typing: stay hidden. Gate open: the contact has proved
+        // it is being used deliberately, so reveal it and let it through.
+        return if typing {
+            TapGate::KeepHeld
+        } else {
+            TapGate::FlushThen
+        };
+    }
+    if typing && has_landing && !has_lift && libinput_idle {
+        TapGate::HoldNew
+    } else {
+        TapGate::Passthrough
+    }
 }
 
 /// Force-release the given ghost MT slots in the virtual device, then
@@ -1051,7 +1430,33 @@ fn rebind_touchpad_usb() {
     eprintln!("trackpad-guard: USB rebind complete");
 }
 
+/// Version + build identity: crate version plus the git commit embedded by
+/// build.rs ("-dirty" when the tree had uncommitted changes). Printed as the
+/// daemon's first log line and by `--version`, so a user-supplied journal
+/// names the exact build — a report against an unknown binary is close to
+/// worthless for an intermittent bug. Empty hash (built outside a git
+/// checkout) degrades to the crate version alone.
+fn version_string() -> String {
+    match option_env!("TRACKPAD_GUARD_GIT_HASH") {
+        Some(hash) if !hash.is_empty() => {
+            format!("{} (git {hash})", env!("CARGO_PKG_VERSION"))
+        }
+        _ => env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
 fn main() {
+    if let Some(arg) = std::env::args().nth(1) {
+        if arg == "--version" || arg == "-V" {
+            println!("trackpad-guard {}", version_string());
+            return;
+        }
+    }
+    // First line in the journal for every run, before discovery can block on
+    // a missing device — triage starts with knowing which build produced the
+    // log that follows.
+    eprintln!("trackpad-guard: version {}", version_string());
+
     let (tx, rx) = mpsc::channel::<Msg>();
 
     {
@@ -1196,8 +1601,8 @@ fn main() {
     // tries to (re)grab any missing touchpads, and reschedules with
     // exponential backoff if the node hasn't reappeared yet.
     let mut next_rescan: Option<Instant> = None;
-    let mut rescan_backoff = Duration::from_millis(185);
-    const RESCAN_INITIAL: Duration = Duration::from_millis(185);
+    let mut rescan_backoff = Duration::from_millis(200);
+    const RESCAN_INITIAL: Duration = Duration::from_millis(200);
     const RESCAN_BACKOFF_MAX: Duration = Duration::from_secs(2);
     // recv_timeout when no rescan is pending — long enough to effectively
     // block until a real message arrives.
@@ -1223,9 +1628,41 @@ fn main() {
     // real activity, and a stray rebind on an idle machine costs nothing
     // visible, so the presence check is gone.
     let mut last_tp_event: Option<Instant> = None;
-    // Mid-motion stall instrumentation (see STALL_LOG_SILENCE below).
+    // Mid-motion stall instrumentation (see STALL_LOG_SILENCE and friends).
     let mut motion_run: u32 = 0;
+    // Are we inside a flagged silence? The onset facts are kept alongside it
+    // because the report is written at resume, by which time motion_run,
+    // last_btn_touch and last_key_ts have all moved on.
     let mut stall_logged = false;
+    let mut stall_onset_run: u32 = 0;
+    let mut stall_onset_btn: Option<i32> = None;
+    let mut stall_onset_key: Option<Instant> = None;
+    // A touch-down withheld from libinput because it landed mid-gate. See
+    // Quarantine — this is what stops a palm tap from becoming a click.
+    let mut quarantine: Option<Quarantine> = None;
+    let mut taps_suppressed: u64 = 0;
+    let mut hb_tap_supp: u64 = 0;
+    // Effective typing gate, and the config mtime it came from. Re-read on
+    // change in the watchdog tick below.
+    // Firmware palm verdicts are rewritten unless this is on — see rewrite_tool_palm.
+    let mut trust_tool_palm = load_trust_tool_palm();
+    let mut palm_rewrites: u64 = 0;
+    let mut hb_palm_fix: u64 = 0;
+    let mut palm_reported = false;
+    let mut gate_taps = load_gate_taps();
+    let mut typing_gate = load_typing_gate().unwrap_or(KEY_TYPING_WINDOW);
+    let mut last_cfg_mtime = std::fs::metadata(CONFIG_PATH)
+        .and_then(|m| m.modified())
+        .ok();
+    eprintln!(
+        "trackpad-guard: typing gate {:?}{}",
+        typing_gate,
+        if last_cfg_mtime.is_some() {
+            format!(" (from {CONFIG_PATH})")
+        } else {
+            format!(" (compiled default; no {CONFIG_PATH})")
+        }
+    );
     let mut tp_burst_since_rebind: u32 = 0;
     // Last observed BTN_TOUCH value from the real touchpad. None until
     // we see a key transition. Used by the wedge watchdog to distinguish
@@ -1279,6 +1716,42 @@ fn main() {
         if next_watchdog <= now {
             next_watchdog = now + WATCHDOG_TICK;
 
+            // Pick up a retuned typing gate within a second of it being
+            // written, so `trackpad-guard-tune 220` (or the dashboard slider)
+            // takes effect while the user keeps typing — the whole point is to
+            // compare values by feel without a restart in between. Only the
+            // mtime is stat()ed each tick; the file is read only when it moved.
+            let cfg_mtime = std::fs::metadata(CONFIG_PATH)
+                .and_then(|m| m.modified())
+                .ok();
+            if cfg_mtime != last_cfg_mtime {
+                last_cfg_mtime = cfg_mtime;
+                let next = load_typing_gate().unwrap_or(KEY_TYPING_WINDOW);
+                if next != typing_gate {
+                    eprintln!(
+                        "trackpad-guard: typing gate {:?} -> {:?} (from {CONFIG_PATH})",
+                        typing_gate, next
+                    );
+                    typing_gate = next;
+                }
+                let next_trust = load_trust_tool_palm();
+                if next_trust != trust_tool_palm {
+                    eprintln!(
+                        "trackpad-guard: trust_tool_palm {} -> {} (from {CONFIG_PATH})",
+                        trust_tool_palm, next_trust
+                    );
+                    trust_tool_palm = next_trust;
+                }
+                let next_taps = load_gate_taps();
+                if next_taps != gate_taps {
+                    eprintln!(
+                        "trackpad-guard: gate_taps {} -> {} (from {CONFIG_PATH})",
+                        gate_taps, next_taps
+                    );
+                    gate_taps = next_taps;
+                }
+            }
+
             // Opportunistic rescan: pick up an AMIRA touchpad that wasn't
             // there at startup (or was dropped by a rebind) but is on the bus
             // now. ONLY when we're short of the expected count — enumerating
@@ -1309,20 +1782,28 @@ fn main() {
             // left the device permanently mute afterwards. This line exists to
             // MEASURE the class (how often, how long, what preceded it) so the
             // next fix is chosen on evidence rather than guessed at.
-            const STALL_LOG_SILENCE: Duration = Duration::from_millis(800);
-            const STALL_LOG_MIN_RUN: u32 = 20;
             if !stall_logged
                 && motion_run >= STALL_LOG_MIN_RUN
                 && last_tp_event.is_some_and(|t| t.elapsed() > STALL_LOG_SILENCE)
             {
-                eprintln!(
-                    "trackpad-guard: real stream went silent mid-motion after {} batches \
-                     — last BTN_TOUCH={:?} | {}",
-                    motion_run,
-                    last_btn_touch,
-                    slot_guard.diag_snapshot(now)
-                );
                 stall_logged = true;
+                stall_onset_run = motion_run;
+                stall_onset_btn = last_btn_touch;
+                stall_onset_key = last_key_ts;
+                // Finger still down is the one case unambiguous enough to report
+                // the moment it happens, and it is worth reporting immediately
+                // because it may never resume — the resume-time verdict below
+                // would then never run. Every other case waits for the resume,
+                // where the silence length and presence check can be applied.
+                if last_btn_touch == Some(1) {
+                    eprintln!(
+                        "trackpad-guard: real stream went silent mid-motion with the finger \
+                         still down after {} batches — last BTN_TOUCH={:?} | {}",
+                        motion_run,
+                        last_btn_touch,
+                        slot_guard.diag_snapshot(now)
+                    );
+                }
             }
 
             let silent_for = last_tp_event.map(|t| t.elapsed());
@@ -1377,6 +1858,9 @@ fn main() {
                 tp_burst_since_rebind = 0;
                 phantom_guard.reset();
                 slot_guard.reset();
+                // A rebind recreates the device: a withheld touch-down refers to
+                // contact state that no longer exists, so drop it rather than flush it.
+                quarantine = None;
                 last_btn_touch = None;
             }
 
@@ -1424,8 +1908,28 @@ fn main() {
                 last_key_ts = Some(at);
                 hb_key += 1;
             }
-            Msg::TouchpadEvents { events, at } => {
+            Msg::TouchpadEvents { mut events, at } => {
                 hb_tp += 1;
+                // Correct the firmware's palm verdicts before anything else looks
+                // at or forwards this batch — see rewrite_tool_palm. Done here,
+                // once, so every downstream path (gate, quarantine, flush, the
+                // slot model) works on the corrected stream.
+                if !trust_tool_palm {
+                    let fixed = rewrite_tool_palm(&mut events);
+                    if fixed > 0 {
+                        palm_rewrites += fixed as u64;
+                        hb_palm_fix += fixed as u64;
+                        if !palm_reported {
+                            palm_reported = true;
+                            eprintln!(
+                                "trackpad-guard: the pad reported MT_TOOL_PALM for a contact — \
+                                 rewriting to MT_TOOL_FINGER. libinput discards a tool-palm touch \
+                                 entirely (silently), which is the 2026-08-27 freeze. Set \
+                                 trust_tool_palm=true in {CONFIG_PATH} to pass these through."
+                            );
+                        }
+                    }
+                }
                 // A batch arriving while we had flagged a mid-motion stall means
                 // the pad resumed on its own. Log the recovered duration: paired
                 // with the stall line this is the only proof of how long the
@@ -1434,13 +1938,26 @@ fn main() {
                 // external capture can never see that difference (2026-08-03).
                 if stall_logged {
                     if let Some(prev) = last_tp_event {
-                        eprintln!(
-                            "trackpad-guard: real stream RESUMED after {:?} of silence \
-                             (daemon was alive throughout — the pad was mute, not us)",
-                            prev.elapsed()
-                        );
+                        let silence = prev.elapsed();
+                        // A key landing more recently than the start of the
+                        // silence means it was pressed while the pad was mute.
+                        let typed_during = last_key_ts
+                            .is_some_and(|k| k.elapsed() < silence && Some(k) != stall_onset_key);
+                        let present = stall_onset_btn == Some(1) || typed_during;
+                        if silence < STALL_REPORT_MAX && present {
+                            eprintln!(
+                                "trackpad-guard: real stream RESUMED after {:?} of silence \
+                                 (daemon was alive throughout — the pad was mute, not us) \
+                                 — at onset: {} batches, BTN_TOUCH={:?}; typed during the \
+                                 silence: {}",
+                                silence, stall_onset_run, stall_onset_btn, typed_during
+                            );
+                        }
                     }
                     stall_logged = false;
+                    stall_onset_run = 0;
+                    stall_onset_btn = None;
+                    stall_onset_key = None;
                 }
                 // Consecutive-batch run length, used to tell a stall that
                 // interrupts active motion from the user simply stopping.
@@ -1470,7 +1987,7 @@ fn main() {
                 // a backlog — what matters is whether the kernel emitted
                 // the touchpad event close in time to a real keystroke.
                 let gap = last_key_ts.map(|t| at.saturating_duration_since(t));
-                let typing = gap.map(|g| g < KEY_TYPING_WINDOW).unwrap_or(false);
+                let typing = gap.map(|g| g < typing_gate).unwrap_or(false);
 
                 // Log every gate-state transition with the gap in ms so
                 // we can correlate user-reported "stuck" periods to what
@@ -1498,7 +2015,72 @@ fn main() {
                 // phantom-suppressed.
                 let phantom_action = phantom_guard.observe(&events, at);
 
-                if typing {
+                // --- tap quarantine (see Quarantine / tap_gate_decision) ---
+                // Runs ahead of the gate so a contact that lands mid-typing can
+                // be withheld rather than forwarded-and-regretted. Keeps the
+                // newest axis values for anything held, so a flush reveals the
+                // finger where it actually is.
+                let (has_landing, has_lift) = batch_landing_lift(&events);
+                if let Some(q) = quarantine.as_mut() {
+                    q.observe(&events);
+                }
+                let mut handled = false;
+                match tap_gate_decision(
+                    gate_taps,
+                    typing,
+                    quarantine.is_some(),
+                    slot_guard.sees_no_contact(),
+                    has_landing,
+                    has_lift,
+                ) {
+                    TapGate::HoldNew => {
+                        let mut q = Quarantine::new(events.clone(), at);
+                        q.observe(&events);
+                        quarantine = Some(q);
+                        dropped_batches += 1;
+                        hb_tp_drop += 1;
+                        handled = true;
+                    }
+                    TapGate::KeepHeld => {
+                        dropped_batches += 1;
+                        hb_tp_drop += 1;
+                        handled = true;
+                    }
+                    TapGate::Discard => {
+                        if let Some(q) = quarantine.take() {
+                            taps_suppressed += 1;
+                            hb_tap_supp += 1;
+                            eprintln!(
+                                "trackpad-guard: tap suppressed — contact landed inside the typing \
+                                 gate, lived {:?} and never moved (libinput never saw it)",
+                                q.at.elapsed()
+                            );
+                        }
+                        dropped_batches += 1;
+                        hb_tp_drop += 1;
+                        handled = true;
+                    }
+                    TapGate::FlushThen => {
+                        if let Some(q) = quarantine.take() {
+                            let frame = q.frame();
+                            if let Err(e) = virt.emit(&frame) {
+                                eprintln!(
+                                    "trackpad-guard: quarantine flush emit failed: {e} \
+                                     (contact stays hidden from libinput)"
+                                );
+                            } else {
+                                forwarded_batches += 1;
+                                hb_tp_fwd += 1;
+                                let _ = slot_guard.observe(&frame, at);
+                            }
+                        }
+                    }
+                    TapGate::Passthrough => {}
+                }
+
+                if handled {
+                    // Fully dealt with by the tap quarantine above.
+                } else if typing {
                     // Palm protection drops touch *motion* while typing — but
                     // never a finger landing or lifting. Forwarding any batch
                     // that changes the contact count keeps libinput's count in
@@ -1595,6 +2177,9 @@ fn main() {
                                 tp_burst_since_rebind = 0;
                                 phantom_guard.reset();
                                 slot_guard.reset();
+                                // A rebind recreates the device: a withheld touch-down refers to
+                                // contact state that no longer exists, so drop it rather than flush it.
+                                quarantine = None;
                             } else {
                                 eprintln!(
                                     "trackpad-guard: phantom contact — rebind cooldown \
@@ -1618,6 +2203,9 @@ fn main() {
                     tp_burst_since_rebind = 0;
                     phantom_guard.reset();
                     slot_guard.reset();
+                    // A rebind recreates the device: a withheld touch-down refers to
+                    // contact state that no longer exists, so drop it rather than flush it.
+                    quarantine = None;
                 }
             }
             Msg::ManualResync => {
@@ -1682,13 +2270,15 @@ fn main() {
         if elapsed >= HEARTBEAT && (hb_tp != 0 || hb_key != 0) {
             let last_key_ago = last_key_ts.map(|t| t.elapsed());
             eprintln!(
-                "trackpad-guard: hb {}s — tp_batches={} (fwd={} drop={} phantom={} slotrel={}) key_batches={} last_key_ago={:?} | {}",
+                "trackpad-guard: hb {}s — tp_batches={} (fwd={} drop={} phantom={} slotrel={} tapsupp={} palmfix={}) key_batches={} last_key_ago={:?} | {}",
                 elapsed.as_secs(),
                 hb_tp,
                 hb_tp_fwd,
                 hb_tp_drop,
                 hb_tp_phantom,
                 hb_slot_rel,
+                hb_tap_supp,
+                hb_palm_fix,
                 hb_key,
                 last_key_ago,
                 slot_guard.diag_snapshot(Instant::now()),
@@ -1699,12 +2289,426 @@ fn main() {
             hb_tp_drop = 0;
             hb_tp_phantom = 0;
             hb_slot_rel = 0;
+            hb_tap_supp = 0;
+            hb_palm_fix = 0;
             hb_key = 0;
         }
     }
 
     eprintln!(
-        "trackpad-guard: exiting (forwarded {} batches, dropped {}, phantom-suppressed {}, ghost-slot releases {})",
-        forwarded_batches, dropped_batches, phantom_batches, slot_releases
+        "trackpad-guard: exiting (forwarded {} batches, dropped {}, phantom-suppressed {}, \
+         ghost-slot releases {}, taps suppressed {}, palm verdicts rewritten {})",
+        forwarded_batches,
+        dropped_batches,
+        phantom_batches,
+        slot_releases,
+        taps_suppressed,
+        palm_rewrites
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The startup line and --version must always carry the crate version,
+    /// with or without an embedded git hash.
+    #[test]
+    fn version_string_carries_the_crate_version() {
+        assert!(version_string().starts_with(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn reads_the_gate_value() {
+        assert_eq!(
+            parse_typing_gate("typing_gate_ms=220"),
+            Some(Duration::from_millis(220))
+        );
+    }
+
+    #[test]
+    fn tolerates_comments_blank_lines_and_padding() {
+        let body = "# a comment\n\n  typing_gate_ms =  180  \nother_key=1\n";
+        assert_eq!(parse_typing_gate(body), Some(Duration::from_millis(180)));
+    }
+
+    #[test]
+    fn zero_disables_the_gate_rather_than_being_treated_as_unset() {
+        assert_eq!(parse_typing_gate("typing_gate_ms=0"), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn clamps_above_the_ceiling_instead_of_rejecting() {
+        assert_eq!(
+            parse_typing_gate("typing_gate_ms=99999"),
+            Some(Duration::from_millis(TYPING_GATE_MAX_MS))
+        );
+    }
+
+    #[test]
+    fn commented_out_key_does_not_count() {
+        assert_eq!(parse_typing_gate("#typing_gate_ms=350"), None);
+    }
+
+    #[test]
+    fn garbage_and_missing_key_fall_back_to_the_default() {
+        assert_eq!(parse_typing_gate("typing_gate_ms=abc"), None);
+        assert_eq!(parse_typing_gate("typing_gate_ms="), None);
+        assert_eq!(parse_typing_gate("nothing here\n"), None);
+        assert_eq!(parse_typing_gate(""), None);
+    }
+
+    /// A negative number must not silently become a huge unsigned value.
+    #[test]
+    fn negative_is_rejected() {
+        assert_eq!(parse_typing_gate("typing_gate_ms=-50"), None);
+    }
+
+    // --- gate_taps parsing ---
+
+    #[test]
+    fn gate_taps_accepts_the_usual_spellings() {
+        for on in ["true", "1", "on", "yes", "TRUE", "On"] {
+            assert_eq!(
+                parse_gate_taps(&format!("gate_taps={on}")),
+                Some(true),
+                "{on}"
+            );
+        }
+        for off in ["false", "0", "off", "no", "FALSE", "Off"] {
+            assert_eq!(
+                parse_gate_taps(&format!("gate_taps={off}")),
+                Some(false),
+                "{off}"
+            );
+        }
+    }
+
+    #[test]
+    fn gate_taps_falls_back_when_absent_or_junk() {
+        assert_eq!(parse_gate_taps("typing_gate_ms=200"), None);
+        assert_eq!(parse_gate_taps("gate_taps=maybe"), None);
+    }
+
+    #[test]
+    fn last_value_wins_so_an_appended_line_overrides() {
+        let body = "gate_taps=true\ngate_taps=false\n";
+        assert_eq!(parse_gate_taps(body), Some(false));
+        let body = "typing_gate_ms=200\ntyping_gate_ms=250\n";
+        assert_eq!(parse_typing_gate(body), Some(Duration::from_millis(250)));
+    }
+
+    // --- tap quarantine decisions ---
+    //
+    // Argument order: gate_taps, typing, quarantined, libinput_idle,
+    // has_landing, has_lift.
+
+    /// The bug this exists for: palm lands mid-typing, lifts without moving.
+    /// Neither half may reach libinput, or it synthesizes a click.
+    #[test]
+    fn palm_tap_inside_the_gate_is_withheld_then_discarded() {
+        // Landing while typing, nothing else down -> withhold.
+        assert_eq!(
+            tap_gate_decision(true, true, false, true, true, false),
+            TapGate::HoldNew
+        );
+        // Its lift, still typing -> drop both halves.
+        assert_eq!(
+            tap_gate_decision(true, true, true, true, false, true),
+            TapGate::Discard
+        );
+    }
+
+    /// A withheld contact that turns out to be a real finger must be revealed
+    /// the moment the gate opens, or the pointer would be dead until the user
+    /// lifted and re-landed.
+    #[test]
+    fn withheld_contact_is_revealed_once_it_moves_after_the_gate_opens() {
+        assert_eq!(
+            tap_gate_decision(true, false, true, false, false, false),
+            TapGate::FlushThen
+        );
+    }
+
+    #[test]
+    fn withheld_contact_stays_hidden_while_typing_continues() {
+        assert_eq!(
+            tap_gate_decision(true, true, true, false, false, false),
+            TapGate::KeepHeld
+        );
+    }
+
+    /// Multi-contact hands straight back to the pre-existing behavior: the
+    /// BTN_TOOL_* aggregates cannot express "one of these fingers is hidden".
+    #[test]
+    fn a_second_finger_landing_reveals_the_held_one_first() {
+        assert_eq!(
+            tap_gate_decision(true, true, true, false, true, false),
+            TapGate::FlushThen
+        );
+        // The 1->2 finger frame carries both a lift and a landing; landing wins.
+        assert_eq!(
+            tap_gate_decision(true, true, true, false, true, true),
+            TapGate::FlushThen
+        );
+    }
+
+    #[test]
+    fn nothing_is_withheld_when_a_finger_is_already_live() {
+        assert_eq!(
+            tap_gate_decision(true, true, false, false, true, false),
+            TapGate::Passthrough
+        );
+    }
+
+    /// Landing with the gate OPEN is an ordinary touch and must not be delayed.
+    #[test]
+    fn landing_outside_the_gate_is_untouched() {
+        assert_eq!(
+            tap_gate_decision(true, false, false, true, true, false),
+            TapGate::Passthrough
+        );
+    }
+
+    /// A lift for a contact libinput already knows about must never be
+    /// withheld — that is the ghost-finger desync batch_changes_contact exists
+    /// to prevent.
+    #[test]
+    fn lift_of_a_known_contact_is_never_withheld() {
+        assert_eq!(
+            tap_gate_decision(true, true, false, false, false, true),
+            TapGate::Passthrough
+        );
+    }
+
+    #[test]
+    fn disabling_gate_taps_reveals_anything_held_and_then_stays_out_of_the_way() {
+        assert_eq!(
+            tap_gate_decision(false, true, true, true, false, false),
+            TapGate::FlushThen
+        );
+        assert_eq!(
+            tap_gate_decision(false, true, false, true, true, false),
+            TapGate::Passthrough
+        );
+    }
+
+    // --- landing/lift classification ---
+
+    fn key(code: KeyCode, value: i32) -> InputEvent {
+        InputEvent::new(EventType::KEY.0, code.0, value)
+    }
+    fn abs(code: AbsoluteAxisCode, value: i32) -> InputEvent {
+        InputEvent::new(EventType::ABSOLUTE.0, code.0, value)
+    }
+
+    #[test]
+    fn classifies_a_touch_down_frame() {
+        let batch = [
+            abs(AbsoluteAxisCode::ABS_MT_SLOT, 0),
+            abs(AbsoluteAxisCode::ABS_MT_TRACKING_ID, 42),
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_X, 512),
+            key(KeyCode::BTN_TOUCH, 1),
+            key(KeyCode::BTN_TOOL_FINGER, 1),
+        ];
+        assert_eq!(batch_landing_lift(&batch), (true, false));
+    }
+
+    #[test]
+    fn classifies_a_touch_up_frame() {
+        let batch = [
+            abs(AbsoluteAxisCode::ABS_MT_TRACKING_ID, -1),
+            key(KeyCode::BTN_TOUCH, 0),
+            key(KeyCode::BTN_TOOL_FINGER, 0),
+        ];
+        assert_eq!(batch_landing_lift(&batch), (false, true));
+    }
+
+    #[test]
+    fn classifies_a_second_finger_landing_as_both() {
+        let batch = [
+            abs(AbsoluteAxisCode::ABS_MT_SLOT, 1),
+            abs(AbsoluteAxisCode::ABS_MT_TRACKING_ID, 43),
+            key(KeyCode::BTN_TOOL_FINGER, 0),
+            key(KeyCode::BTN_TOOL_DOUBLETAP, 1),
+        ];
+        assert_eq!(batch_landing_lift(&batch), (true, true));
+    }
+
+    #[test]
+    fn pure_motion_is_neither() {
+        let batch = [
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_X, 600),
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_Y, 400),
+        ];
+        assert_eq!(batch_landing_lift(&batch), (false, false));
+        assert!(!batch_changes_contact(&batch));
+    }
+
+    // --- quarantine repositioning ---
+
+    /// The whole point of tracking axis values while withheld: revealing the
+    /// contact at its landing point and then jumping to the current position
+    /// would drag the cursor by however far the finger slid during the gate.
+    #[test]
+    fn flushed_frame_carries_the_latest_position_not_the_landing_one() {
+        let down = vec![
+            abs(AbsoluteAxisCode::ABS_MT_SLOT, 0),
+            abs(AbsoluteAxisCode::ABS_MT_TRACKING_ID, 42),
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_X, 100),
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_Y, 200),
+            key(KeyCode::BTN_TOUCH, 1),
+        ];
+        let mut q = Quarantine::new(down, Instant::now());
+        q.observe(&[
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_X, 150),
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_Y, 260),
+        ]);
+        let frame = q.frame();
+
+        let value_of = |want: AbsoluteAxisCode| {
+            frame.iter().find_map(|ev| match ev.destructure() {
+                EventSummary::AbsoluteAxis(_, code, v) if code == want => Some(v),
+                _ => None,
+            })
+        };
+        assert_eq!(value_of(AbsoluteAxisCode::ABS_MT_POSITION_X), Some(150));
+        assert_eq!(value_of(AbsoluteAxisCode::ABS_MT_POSITION_Y), Some(260));
+        // Identity must survive untouched, or libinput routes to the wrong slot
+        // or treats the contact as a different finger.
+        assert_eq!(value_of(AbsoluteAxisCode::ABS_MT_SLOT), Some(0));
+        assert_eq!(value_of(AbsoluteAxisCode::ABS_MT_TRACKING_ID), Some(42));
+        // And the frame still reads as a landing.
+        assert_eq!(batch_landing_lift(&frame), (true, false));
+    }
+
+    /// The file the installer seeds and `trackpad-guard-tune` writes must
+    /// parse to the compiled default, or a fresh install would silently
+    /// disagree with itself.
+    #[test]
+    fn seeded_config_matches_the_compiled_default() {
+        let seeded = "# trackpad-guard runtime tunables. Written by trackpad-guard-tune; the\n\
+                      # daemon re-reads this file within ~1s of any change (no restart needed).\n\
+                      #\n\
+                      # typing_gate_ms — touchpad events arriving within this many milliseconds of a\n\
+                      #   keystroke are dropped (palm protection while typing). 0 disables the gate.\n\
+                      #   Compiled default is 200ms; accepted range is 0-500ms.\n\
+                      #\n\
+                      # gate_taps — whether the gate also hides a finger that LANDS while you are\n\
+                      #   typing. Taps are synthesized by libinput from a touch-down/touch-up pair,\n\
+                      #   so with this off a palm brushing the pad mid-sentence becomes a real click\n\
+                      #   at wherever the pointer happened to be. Off restores the pre-2026-08-20\n\
+                      #   behavior; only useful for A/B testing.\n\
+                      typing_gate_ms=200\n\
+                      gate_taps=true\n";
+        assert_eq!(parse_typing_gate(seeded), Some(KEY_TYPING_WINDOW));
+        assert_eq!(parse_gate_taps(seeded), Some(true));
+        // The comment block mentions both keys and a date; none of that may be
+        // picked up as a value.
+        assert_eq!(
+            parse_config_value(seeded, "gate_taps").as_deref(),
+            Some("true")
+        );
+    }
+}
+
+#[cfg(test)]
+mod tool_palm_tests {
+    use super::*;
+
+    fn abs(code: AbsoluteAxisCode, value: i32) -> InputEvent {
+        InputEvent::new(EventType::ABSOLUTE.0, code.0, value)
+    }
+    fn value_of(batch: &[InputEvent], want: AbsoluteAxisCode) -> Option<i32> {
+        batch.iter().find_map(|ev| match ev.destructure() {
+            EventSummary::AbsoluteAxis(_, code, v) if code == want => Some(v),
+            _ => None,
+        })
+    }
+
+    /// The freeze: the pad marks a contact MT_TOOL_PALM and libinput then
+    /// discards that touch entirely, silently.
+    #[test]
+    fn a_palm_verdict_becomes_a_finger() {
+        let mut batch = vec![
+            abs(AbsoluteAxisCode::ABS_MT_SLOT, 0),
+            abs(AbsoluteAxisCode::ABS_MT_TRACKING_ID, 490),
+            abs(AbsoluteAxisCode::ABS_MT_TOOL_TYPE, MT_TOOL_PALM),
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_X, 512),
+        ];
+        assert_eq!(rewrite_tool_palm(&mut batch), 1);
+        assert_eq!(
+            value_of(&batch, AbsoluteAxisCode::ABS_MT_TOOL_TYPE),
+            Some(MT_TOOL_FINGER)
+        );
+        // Identity and position must be untouched, or libinput routes the contact
+        // to the wrong slot or treats it as a different finger.
+        assert_eq!(value_of(&batch, AbsoluteAxisCode::ABS_MT_SLOT), Some(0));
+        assert_eq!(
+            value_of(&batch, AbsoluteAxisCode::ABS_MT_TRACKING_ID),
+            Some(490)
+        );
+        assert_eq!(
+            value_of(&batch, AbsoluteAxisCode::ABS_MT_POSITION_X),
+            Some(512)
+        );
+    }
+
+    #[test]
+    fn an_ordinary_finger_is_left_alone() {
+        let mut batch = vec![abs(AbsoluteAxisCode::ABS_MT_TOOL_TYPE, MT_TOOL_FINGER)];
+        assert_eq!(rewrite_tool_palm(&mut batch), 0);
+        assert_eq!(
+            value_of(&batch, AbsoluteAxisCode::ABS_MT_TOOL_TYPE),
+            Some(MT_TOOL_FINGER)
+        );
+    }
+
+    /// A stylus (MT_TOOL_PEN) is a real distinction and must survive; only the
+    /// palm verdict is overridden.
+    #[test]
+    fn other_tool_types_survive() {
+        let mut batch = vec![abs(AbsoluteAxisCode::ABS_MT_TOOL_TYPE, 1)];
+        assert_eq!(rewrite_tool_palm(&mut batch), 0);
+        assert_eq!(
+            value_of(&batch, AbsoluteAxisCode::ABS_MT_TOOL_TYPE),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn counts_every_rewritten_contact_in_a_multi_touch_batch() {
+        let mut batch = vec![
+            abs(AbsoluteAxisCode::ABS_MT_SLOT, 0),
+            abs(AbsoluteAxisCode::ABS_MT_TOOL_TYPE, MT_TOOL_PALM),
+            abs(AbsoluteAxisCode::ABS_MT_SLOT, 1),
+            abs(AbsoluteAxisCode::ABS_MT_TOOL_TYPE, MT_TOOL_PALM),
+        ];
+        assert_eq!(rewrite_tool_palm(&mut batch), 2);
+    }
+
+    #[test]
+    fn a_batch_without_a_tool_type_is_untouched() {
+        let mut batch = vec![
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_X, 100),
+            abs(AbsoluteAxisCode::ABS_MT_POSITION_Y, 200),
+        ];
+        assert_eq!(rewrite_tool_palm(&mut batch), 0);
+    }
+
+    #[test]
+    fn the_escape_hatch_parses() {
+        assert_eq!(
+            parse_bool_key("trust_tool_palm=true", "trust_tool_palm"),
+            Some(true)
+        );
+        assert_eq!(
+            parse_bool_key("trust_tool_palm=off", "trust_tool_palm"),
+            Some(false)
+        );
+        assert_eq!(
+            parse_bool_key("typing_gate_ms=200", "trust_tool_palm"),
+            None
+        );
+    }
 }

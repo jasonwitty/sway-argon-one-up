@@ -58,6 +58,9 @@ prompt_yn() {
 }
 
 REPO_URL="https://github.com/jasonwitty/sway-argon-one-up.git"
+# Branch to install from. Override to test a release candidate:
+#   curl -fsSL https://raw.githubusercontent.com/jasonwitty/sway-argon-one-up/<branch>/install.sh | REPO_BRANCH=<branch> bash
+REPO_BRANCH="${REPO_BRANCH:-main}"
 REPO_DIR="/tmp/sway-argon-one-up"
 
 # ---------------------------------------------------------------------------
@@ -435,8 +438,8 @@ if [ -d "$REPO_DIR" ]; then
     info "Removing stale clone..."
     rm -rf "$REPO_DIR"
 fi
-info "Cloning sway-argon-one-up..."
-git clone --depth=1 "$REPO_URL" "$REPO_DIR"
+info "Cloning sway-argon-one-up ($REPO_BRANCH)..."
+git clone --depth=1 --branch "$REPO_BRANCH" "$REPO_URL" "$REPO_DIR"
 
 cd "$REPO_DIR"
 
@@ -740,7 +743,10 @@ if [ -x /usr/local/bin/system-dashboard ]; then
     success "system-dashboard already installed"
 else
     info "Downloading prebuilt system-dashboard for aarch64..."
-    SD_TAG=$(curl -fsSL "https://api.github.com/repos/jasonwitty/sway-argon-one-up/releases" 2>/dev/null \
+    # SD_TAG can be set in the environment to install a specific release
+    # (e.g. a release-candidate build); otherwise take the newest one.
+    SD_TAG="${SD_TAG:-}"
+    [ -n "$SD_TAG" ] || SD_TAG=$(curl -fsSL "https://api.github.com/repos/jasonwitty/sway-argon-one-up/releases" 2>/dev/null \
         | jq -r '[.[] | select(.tag_name | startswith("system-dashboard-v"))][0].tag_name // empty')
     if [ -z "$SD_TAG" ]; then
         error "Could not find a published system-dashboard release on GitHub."

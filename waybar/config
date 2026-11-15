@@ -19,6 +19,7 @@
     "pulseaudio",
     "backlight",
     "custom/argon-battery",
+    "network",
     "tray",
     "custom/power"
   ],
@@ -52,9 +53,12 @@
     "on-click-right": "audio-sink-picker"
   },
   "network": {
-    "format-wifi": "󰤨 {essid}",
-    "format-ethernet": "󰈀 {ipaddr}",
-    "format-disconnected": "󰤭 offline",
+    "format-wifi": "󰤨",
+    "format-ethernet": "󰈀",
+    "format-disconnected": "󰤭",
+    "tooltip-format-wifi": "{essid} ({signalStrength}%)  {ipaddr}",
+    "tooltip-format-ethernet": "{ifname}  {ipaddr}",
+    "tooltip-format-disconnected": "Offline",
     "tooltip": true,
     "on-click": "~/.local/bin/network-panel toggle",
     "on-click-right": "foot -e nmtui"

@@ -51,7 +51,6 @@ input type:touchpad {
     # touchpad-native/ tags both as internal (quirks file + udev rule,
     # squeeby's approach). `touchpad-mode toggle` — the dashboard tile and
     # Mod+Shift+G — rewrites these two lines, so keep them one per line.
-    # `touchpad-mode guard` goes back to the trackpad-guard daemon.
     dwt enabled
     dwtp enabled
 }
@@ -243,28 +242,8 @@ bindsym $mod+r mode "resize"
     bindsym $mod+Shift+c exec ~/.local/bin/claude-prompt
     # Theme switcher
     bindsym $mod+t exec ~/.local/bin/switch-theme --picker
-    # Manual trackpad rescue: if the AMIRA touchpad becomes unresponsive,
-    # this asks systemd to deliver SIGUSR1 to the (root-owned) trackpad-
-    # guard system service, which triggers a USB unbind+rebind on the
-    # touchpad interface (vid:pid 6080:8061). We can't pkill the daemon
-    # directly because it runs as root; the sudoers entry installed by
-    # install.sh permits exactly this systemctl-kill command without
-    # password. The daemon also has an automatic wedge-watchdog, but
-    # this manual trigger covers cases the heuristic can't detect (e.g.
-    # the libinput-downstream stall where events still flow through us).
-    bindsym $mod+Shift+t exec sudo -n /usr/bin/systemctl kill -s SIGUSR1 trackpad-guard.service
-    # Light trackpad rescue (try this FIRST — Mod+Shift+u for "unstick"): SIGUSR2
-    # makes the daemon synthesize an "all contacts up" frame to the virtual device
-    # and then re-land one contact with a fresh tracking id. That resyncs
-    # libinput's finger count without touching USB, so unlike SIGUSR1 it cannot
-    # hang or momentarily leave sway with no pointer. Covers the freeze where
-    # events still flow through us but the cursor sits still because libinput
-    # believes more fingers are down than really are — which is what lifting your
-    # finger and putting it back down fixes by hand.
-    bindsym $mod+Shift+u exec sudo -n /usr/bin/systemctl kill -s SIGUSR2 trackpad-guard.service
     # Disable-while-typing on/off (libinput's own). Same command the
-    # dashboard tile runs, so the notification is consistent. The two
-    # rescue bindings above only do anything in trackpad-guard mode.
+    # dashboard tile runs, so the notification is consistent.
     bindsym $mod+Shift+g exec /usr/local/bin/touchpad-mode toggle
     # Help overlay
     bindsym $mod+Shift+h exec ~/.local/bin/sway-help

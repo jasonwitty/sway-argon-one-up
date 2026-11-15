@@ -6,7 +6,8 @@
 #   touchpad-mode toggle   flip it; what the dashboard tile and Mod+Shift+G run
 #
 #   touchpad-mode native   libinput's own disable-while-typing (no daemon)
-#   touchpad-mode guard    the trackpad-guard daemon (likely deprecated)
+#   touchpad-mode guard    the retired trackpad-guard daemon, if you have
+#                          installed it by hand (see trackpad-guard/README.md)
 #   touchpad-mode status   show which one is in effect
 #
 # "native" is squeeby's approach: tell libinput the AMIRA keyboard and touchpad
@@ -25,6 +26,7 @@ HERE=$(dirname "$(readlink -f "$0")")
 RULE=/etc/udev/rules.d/99-argon-one-touchpad.rules
 QUIRKS=/etc/libinput/local-overrides.quirks
 LEGACY_RULE=/etc/udev/rules.d/99-amira-dwt.rules
+GUARD_UNIT=/etc/systemd/system/trackpad-guard.service
 SWAY_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/sway/config"
 MARKER="Installed to /etc/libinput/local-overrides.quirks by touchpad-mode"
 HOTKEY="Mod+Shift+G"
@@ -94,14 +96,22 @@ native() {
     sudo install -m 0644 "$HERE/99-argon-one-touchpad.rules" "$RULE"
     # Set a udev property libinput stopped reading years ago; it never worked.
     sudo rm -f "$LEGACY_RULE"
-    # Stopping the service also removes its rule that hides the real touchpad.
-    sudo systemctl disable --now trackpad-guard.service
+    # The installer no longer ships trackpad-guard, so the unit is normally
+    # absent. If it is there (an old or by-hand install), stop it: that also
+    # removes its rule that hides the real touchpad.
+    if [[ -e $GUARD_UNIT ]]; then
+        sudo systemctl disable --now trackpad-guard.service
+    fi
     reload_udev
     set_sway_dwt enabled
     echo "Native disable-while-typing is set up. Log out and back in (or reboot) to finish."
 }
 
 guard() {
+    if [[ ! -e $GUARD_UNIT ]]; then
+        echo "touchpad-mode: trackpad-guard is not installed. It is retired and the installer no longer sets it up; to use it anyway, build and install it by hand (trackpad-guard/README.md), then run this again." >&2
+        exit 1
+    fi
     sudo rm -f "$RULE"
     if [[ -e $QUIRKS ]] && grep -qF "$MARKER" "$QUIRKS"; then
         sudo rm -f "$QUIRKS"

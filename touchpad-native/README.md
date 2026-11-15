@@ -2,7 +2,7 @@
 
 Typing protection for the Argon ONE UP touchpad using libinput's own
 disable-while-typing, with no daemon. This is what the installer sets up;
-`trackpad-guard/` is the earlier daemon, kept for now as a fallback.
+`trackpad-guard/` is the earlier daemon. It is retired: the installer no longer sets it up and removes it when upgrading.
 
 The approach is **squeeby's**: the AMIRA keyboard and touchpad are separate
 USB devices, so libinput treats them as unrelated and never pairs them. Tag
@@ -17,7 +17,7 @@ both as internal and it pairs them itself.
 ```
 touchpad-mode toggle   # disable-while-typing on/off, no root, no re-login
 touchpad-mode native   # set this up (the installer does); then log out and back in
-touchpad-mode guard    # back to trackpad-guard
+touchpad-mode guard    # back to trackpad-guard (only if you installed it by hand)
 ```
 
 Two things beyond squeeby's original steps:

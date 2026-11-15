@@ -90,7 +90,7 @@ The installer will:
 
 | Package | What it is | Recommendation |
 |---------|-----------|----------------|
-| **Brave Browser** | Privacy-focused browser with built-in ad blocking. Fully integrated with the theme switcher — colors update live on theme change. | Recommended as your daily browser |
+| **Brave Origin** | The debloated build of Brave: same privacy-focused browser with built-in ad blocking, without Rewards, Wallet, VPN, Leo AI and the other extras. Fully integrated with the theme switcher — colors update live on theme change. | Recommended as your daily browser |
 | **Chromium** | Has the best Wayland screen-sharing support. Also theme-integrated. | Install if you need screen sharing (Slack, Teams) |
 | **WebApps** | Pin websites as standalone app windows with their own icons. Useful on ARM where not every app has a native package. | Install if you use web-based tools like Slack or Teams |
 | **Flatpak + Bazaar** | Flatpak runs sandboxed apps from Flathub. Bazaar is a graphical app store for browsing them. | Install if you want access to more desktop apps |
@@ -118,7 +118,9 @@ To upgrade an existing install, run the installer again (same command as Step 5)
 
 - rebuilds and reinstalls the Rust daemons and downloads the current system-dashboard, then restarts the services that were running;
 - replaces the configs and scripts with the versions from the repository, after copying your existing ones to `~/.config/sway-argon-backup-<date>-<time>/` — compare against that folder to bring back any edits of your own;
-- keeps the theme you had selected.
+- keeps the theme you had selected;
+- removes the retired `trackpad-guard` service (typing protection is now libinput's own disable-while-typing);
+- if you have the regular Brave browser from an earlier version, asks whether to migrate to Brave Origin (your profile is copied across and the original left untouched) or keep your current Brave.
 
 Reboot afterwards, as for a first install.
 

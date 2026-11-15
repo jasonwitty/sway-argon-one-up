@@ -43,7 +43,7 @@ This setup is built for the [Argon ONE UP CM5 Laptop](https://argon40.com/produc
 | `argon-fan/` | Rust PWM fan-control daemon with mode-based curves (silent / normal / turbo / full); waybar tile + wofi picker |
 | `argon-lid-monitor/` | Rust GPIO 27 lid-event monitor; shells to `lid-suspend` to lock + sleep displays and switch governor on close |
 | `touchpad-native/` | libinput quirks + udev rule that make native disable-while-typing work on the AMIRA combo keyboard/touchpad; `touchpad-mode` turns it on/off (dashboard tile, `Mod+Shift+G`) |
-| `trackpad-guard/` | Likely deprecated: the earlier Rust disable-while-typing daemon, installed but disabled; `touchpad-mode guard` switches back to it |
+| `trackpad-guard/` | Retired: the earlier Rust disable-while-typing daemon. No longer installed (the installer removes it on upgrade); the source is kept for building by hand |
 | `system-dashboard/` | Tauri 2 desktop app bound to the hardware battery key (`Pause`): battery, power profile, idle mode, theme, fan, brightness slider, volume slider — all live |
 
 ## Themes

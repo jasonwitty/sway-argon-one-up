@@ -145,19 +145,56 @@ INSTALL_WEBAPPS="n"
 INSTALL_FLATPAK="n"
 INSTALL_CLAUDE="n"
 
-prompt_yn "INSTALL_BRAVE" "Brave Origin" \
+# BRAVE_MODE: origin = install Brave Origin, keep = stay on the regular Brave
+# that is already installed, none = no Brave.
+BRAVE_MODE="none"
+pkg_installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"; }
+
+if pkg_installed brave-origin; then
+    # Already on Brave Origin (a re-run): nothing to ask.
+    BRAVE_MODE="origin"
+    info "Brave Origin is already installed — keeping it."
+elif pkg_installed brave-browser; then
+    # Installed by an earlier release, when this setup shipped regular Brave.
+    echo ""
+    echo -e "${BOLD}Brave: this setup has moved to Brave Origin${NC}"
+    echo -e "${DIM}You have the regular Brave browser from an earlier version of this installer.
+The default browser here is now Brave Origin, the debloated build of the same
+browser: Rewards, Wallet, VPN, Leo AI, News, Talk and Tor are stripped out.
+
+  1) Migrate to Brave Origin. Installs it, copies your Brave profile (bookmarks,
+     history, extensions, settings) across, and points Mod+B at it. Regular
+     Brave and its profile are left in place, untouched, until you remove them
+     yourself (sudo apt remove brave-browser).
+  2) Keep your current Brave. Nothing is installed; Mod+B keeps opening it.${NC}"
+    echo ""
+    read -rp "Choose [1/2] (default 2, keep current Brave): " response </dev/tty
+    if [ "$response" = "1" ]; then
+        BRAVE_MODE="origin"
+    else
+        BRAVE_MODE="keep"
+    fi
+else
+    prompt_yn "INSTALL_BRAVE" "Brave Origin" \
     "Brave Origin is the debloated build of Brave: the same privacy-focused engine
 with built-in ad and tracker blocking, but with Rewards, Wallet, VPN, Leo AI, News,
 Talk, Tor and other extras stripped out (free on Linux, arm64 supported). It supports
 vertical tabs for a clean, minimal look. This is the default browser for this setup
 and is fully integrated with the theme switcher — title bar and color scheme update
 live on every theme change."
+    [ "$INSTALL_BRAVE" = "y" ] && BRAVE_MODE="origin"
+fi
+# The rest of the script asks two things: is Brave Origin to be installed
+# (INSTALL_BRAVE), and is there a Brave of either kind to integrate (HAS_BRAVE).
+INSTALL_BRAVE="n"; HAS_BRAVE="n"
+[ "$BRAVE_MODE" = "origin" ] && INSTALL_BRAVE="y"
+[ "$BRAVE_MODE" != "none" ] && HAS_BRAVE="y"
 
 prompt_yn "INSTALL_WIDEVINE" "Widevine DRM (Netflix, etc.) for Brave" \
     "Widevine is the DRM module streaming services like Netflix, Amazon Prime, and
 Spotify require. Brave on ARM ships DRM support but does not fetch the module on
 its own, so this installs the Raspberry Pi Widevine package and enables it in
-Brave. Requires the Brave option above. Playback tops out around 720p on Linux
+Brave. Requires Brave (either kind). Playback tops out around 720p on Linux
 (a platform limitation, not a bug)."
 
 prompt_yn "INSTALL_CHROMIUM" "Chromium" \
@@ -234,13 +271,35 @@ fi
 # Optional: Brave Origin (debloated Brave; same apt repo, arm64 supported)
 if [ "$INSTALL_BRAVE" = "y" ]; then
     info "Installing Brave Origin..."
-    sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
-        https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
-    echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" \
-        | sudo tee /etc/apt/sources.list.d/brave-browser-release.list >/dev/null
+    # Regular Brave and Brave Origin share one apt repository. If an earlier
+    # install already configured it (as a .list or a .sources file), reuse
+    # that rather than add a second entry for the same repository.
+    if ! compgen -G "/etc/apt/sources.list.d/brave-browser-release.*" > /dev/null; then
+        sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+            https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+            | sudo tee /etc/apt/sources.list.d/brave-browser-release.list >/dev/null
+    fi
     sudo apt update
     sudo apt install -y brave-origin
     success "Brave Origin installed"
+
+    # Migrating from regular Brave: give Brave Origin a copy of the profile.
+    # Only when Origin has no profile yet, and never touching the original.
+    BRAVE_CFG="$HOME/.config/BraveSoftware"
+    if [ -d "$BRAVE_CFG/Brave-Browser" ] && [ ! -e "$BRAVE_CFG/Brave-Origin" ]; then
+        if pgrep -f "/opt/brave.com/" >/dev/null 2>&1; then
+            warn "Brave is running, so its profile was not copied (a live profile copies inconsistently)."
+            warn "To bring it across later: close Brave, then run"
+            warn "  cp -a ~/.config/BraveSoftware/Brave-Browser ~/.config/BraveSoftware/Brave-Origin"
+        else
+            info "Copying your Brave profile to Brave Origin..."
+            cp -a "$BRAVE_CFG/Brave-Browser" "$BRAVE_CFG/Brave-Origin"
+            # Lock files name the old instance; a copy of them blocks startup.
+            rm -f "$BRAVE_CFG/Brave-Origin"/Singleton*
+            success "Brave profile copied (the original is untouched)"
+        fi
+    fi
 fi
 
 # Optional: WebApps
@@ -474,6 +533,12 @@ cp -r sway waybar wob wofi foot mako swaylock gtk-3.0 sway-themes fish wireplumb
 cp starship.toml ~/.config/
 cp mimeapps.list ~/.config/
 
+# Staying on regular Brave: the shipped sway config launches Brave Origin on
+# Mod+B, so point that binding at the browser that is actually installed.
+if [ "$BRAVE_MODE" = "keep" ]; then
+    sed -i 's|exec /usr/bin/brave-origin |exec /usr/bin/brave-browser |' ~/.config/sway/config
+fi
+
 # Wallpapers. Copy the directory's contents: `cp -r wallpapers ~/.wallpapers`
 # nests them in ~/.wallpapers/wallpapers once the target exists (any re-run).
 mkdir -p ~/.wallpapers
@@ -502,7 +567,7 @@ chmod +x ~/.local/bin/*
 
 # Optional: Widevine DRM for Brave (installs the CDM + seeds the Brave profile)
 if [ "$INSTALL_WIDEVINE" = "y" ]; then
-    if [ "$INSTALL_BRAVE" != "y" ]; then
+    if [ "$HAS_BRAVE" != "y" ]; then
         warn "Widevine was selected but Brave was not — skipping (Widevine needs Brave)."
     else
         info "Enabling Widevine DRM for Brave..."
@@ -569,7 +634,7 @@ build_and_install() {
     success "$crate built and installed"
 }
 
-for crate in argon-battery-rs argon-lid-monitor trackpad-guard argon-fan power-button-guard; do
+for crate in argon-battery-rs argon-lid-monitor argon-fan power-button-guard; do
     build_and_install "$crate"
 done
 
@@ -577,12 +642,6 @@ done
 # argon-battery-rs through sudo). Must be root-owned and outside $HOME: it is
 # what the sudoers rule in Phase 10 allows.
 sudo install -o root -g root -m 0755 "$REPO_DIR/sbin/set-cpu-governor" /usr/local/sbin/set-cpu-governor
-
-# Upgrade path: remove the old Python trackpad-guard and its exec line from sway.
-if [ -f "$HOME/.local/bin/trackpad-guard" ] && head -1 "$HOME/.local/bin/trackpad-guard" | grep -q python; then
-    info "Removing old Python trackpad-guard (replaced by Rust version)..."
-    rm -f "$HOME/.local/bin/trackpad-guard"
-fi
 
 # User must be in the gpio group to access /dev/gpiochip0 from argon-lid-monitor
 if ! groups | grep -qw gpio; then
@@ -605,98 +664,37 @@ if systemctl --user is-active --quiet graphical-session.target 2>/dev/null; then
 fi
 success "argon-lid-monitor user service installed and enabled"
 
-# trackpad-guard v4 architecture: intercepts AMIRA touchpad evdev directly
-# and exposes a virtual uinput replacement. The LIBINPUT_IGNORE rule is
-# now service-managed (installed on start, removed on stop) so that
-# disabling the service doesn't leave the touchpad completely broken —
-# see trackpad-guard/scripts/manage-udev-rule.sh.
-info "Cleaning up old trackpad-guard udev rule (pre-split layout)..."
-sudo rm -f /etc/udev/rules.d/60-trackpad-guard-amira.rules
-
-# Upgrade path (pre-2026-06-24): the service-managed IGNORE rule used to
-# live in persistent /etc. If a prior install died uncleanly (e.g. power
-# loss) it could orphan that file there, hiding the real touchpad on the
-# next boot with no virtual replacement. The rule is now installed into
-# volatile /run by manage-udev-rule.sh; remove any persistent leftover so
-# it can't shadow the /run copy (same-name files in /etc win over /run).
-info "Removing legacy persistent trackpad-guard IGNORE rule (now /run-managed)..."
-sudo rm -f /etc/udev/rules.d/60-trackpad-guard-amira-ignore.rules
-
-info "Installing trackpad-guard permanent udev rule (uinput perms)..."
-sudo install -m 0644 "$REPO_DIR/trackpad-guard/udev/60-trackpad-guard-uinput.rules" \
-    /etc/udev/rules.d/60-trackpad-guard-uinput.rules
-
-info "Installing trackpad-guard service-managed assets..."
-sudo install -d -m 0755 /usr/local/lib/trackpad-guard
-sudo install -m 0644 "$REPO_DIR/trackpad-guard/udev/60-trackpad-guard-amira-ignore.rules" \
-    /usr/local/lib/trackpad-guard/60-trackpad-guard-amira-ignore.rules
-sudo install -m 0755 "$REPO_DIR/trackpad-guard/scripts/manage-udev-rule.sh" \
-    /usr/local/lib/trackpad-guard/manage-udev-rule.sh
-
-info "Installing trackpad-guard toggle wrapper..."
-sudo install -m 0755 "$REPO_DIR/trackpad-guard/scripts/trackpad-guard-toggle.sh" \
-    /usr/local/bin/trackpad-guard-toggle
-
-info "Installing trackpad-guard modules-load.d config..."
-sudo install -m 0644 "$REPO_DIR/trackpad-guard/modules-load.d/trackpad-guard.conf" \
-    /etc/modules-load.d/trackpad-guard.conf
-sudo modprobe uinput 2>/dev/null || true
+# trackpad-guard is retired: typing protection is libinput's own
+# disable-while-typing now (set up just below). Earlier releases installed the
+# daemon as a system service, and before that as a user unit and a Python
+# script, so on an upgrade take out everything any of them put down. The crate
+# stays in the repository (trackpad-guard/README.md) for anyone who wants to
+# build it by hand; nothing here installs it.
+info "Removing trackpad-guard (replaced by native disable-while-typing)..."
+# Stop it first, while its helper script still exists: the unit's ExecStopPost
+# removes the udev rule that hides the real touchpad from libinput.
+sudo systemctl disable --now trackpad-guard.service 2>/dev/null || true
+systemctl --user disable --now trackpad-guard.service 2>/dev/null || true
+rm -f "$HOME/.config/systemd/user/trackpad-guard.service"
+if [ -f "$HOME/.local/bin/trackpad-guard" ] && head -1 "$HOME/.local/bin/trackpad-guard" | grep -q python; then
+    rm -f "$HOME/.local/bin/trackpad-guard"
+fi
+sudo rm -f \
+    /etc/systemd/system/trackpad-guard.service \
+    /usr/local/bin/trackpad-guard \
+    /usr/local/bin/trackpad-guard-toggle \
+    /usr/local/bin/trackpad-guard-tune \
+    /etc/modules-load.d/trackpad-guard.conf \
+    /etc/udev/rules.d/60-trackpad-guard-uinput.rules \
+    /etc/udev/rules.d/60-trackpad-guard-amira.rules \
+    /etc/udev/rules.d/60-trackpad-guard-amira-ignore.rules \
+    /run/udev/rules.d/60-trackpad-guard-amira-ignore.rules
+sudo rm -rf /usr/local/lib/trackpad-guard /etc/trackpad-guard
+sudo systemctl daemon-reload
+systemctl --user daemon-reload 2>/dev/null || true
 sudo udevadm control --reload-rules
 sudo udevadm trigger --action=change --subsystem-match=input
-sudo udevadm trigger --action=change /sys/class/misc/uinput 2>/dev/null || true
-
-sudo install -m 0755 "$REPO_DIR/trackpad-guard/scripts/trackpad-guard-tune.sh" \
-    /usr/local/bin/trackpad-guard-tune
-
-# Runtime tunables the daemon re-reads on mtime change (no restart). Seeded
-# with the compiled default so the file is self-documenting and
-# trackpad-guard-tune has something to read on a fresh install.
-sudo mkdir -p /etc/trackpad-guard
-if [ ! -f /etc/trackpad-guard/config ]; then
-    sudo tee /etc/trackpad-guard/config > /dev/null <<'TPGEOF'
-# trackpad-guard runtime tunables. Written by trackpad-guard-tune; the
-# daemon re-reads this file within ~1s of any change (no restart needed).
-#
-# typing_gate_ms — touchpad events arriving within this many milliseconds of a
-#   keystroke are dropped (palm protection while typing). 0 disables the gate.
-#   Compiled default is 200ms; accepted range is 0-500ms.
-#
-# gate_taps — whether the gate also hides a finger that LANDS while you are
-#   typing. Taps are synthesized by libinput from a touch-down/touch-up pair,
-#   so with this off a palm brushing the pad mid-sentence becomes a real click
-#   at wherever the pointer happened to be. Off restores the pre-2026-08-20
-#   behavior; only useful for A/B testing.
-typing_gate_ms=200
-gate_taps=true
-TPGEOF
-fi
-# trackpad-guard is now a SYSTEM service (not user). It needs to run
-# during the greeter's sway session as well — the system-wide udev rule
-# above tells libinput to ignore the real AMIRA touchpad, so without a
-# replacement virtual device running at boot the login screen has no
-# usable touchpad. Running system-wide also gives us privileged USB
-# rebind without needing sudoers carve-outs.
-#
-# Upgrade path: if the old per-user unit is enabled or running, tear it
-# down before installing the system unit (otherwise both would race for
-# /dev/uinput).
-info "Migrating away from old trackpad-guard user unit (if present)..."
-if systemctl --user is-enabled --quiet trackpad-guard.service 2>/dev/null \
-   || systemctl --user is-active --quiet trackpad-guard.service 2>/dev/null; then
-    systemctl --user disable --now trackpad-guard.service 2>/dev/null || true
-fi
-rm -f "$HOME/.config/systemd/user/trackpad-guard.service"
-systemctl --user daemon-reload 2>/dev/null || true
-
-info "Installing trackpad-guard systemd system unit..."
-sudo install -m 0644 "$REPO_DIR/trackpad-guard/systemd/trackpad-guard.service" \
-    /etc/systemd/system/trackpad-guard.service
-sudo systemctl daemon-reload
-# trackpad-guard is likely deprecated: it stays installed but disabled, as the
-# fallback behind `touchpad-mode guard`. Typing protection now comes from
-# libinput's own disable-while-typing, set up just below.
-sudo systemctl disable --now trackpad-guard.service 2>/dev/null || true
-success "trackpad-guard installed (disabled — fallback only, see touchpad-mode guard)"
+success "trackpad-guard removed"
 
 # Native libinput disable-while-typing (squeeby's approach): a quirks file and
 # a udev rule tag the AMIRA keyboard and touchpad as internal so libinput
@@ -851,7 +849,7 @@ info "Creating user directories..."
 xdg-user-dirs-update
 success "User directories created"
 
-# Sudoers for lid-suspend, CPU governor, USB bind/unbind, trackpad-guard.
+# Sudoers for lid-suspend, CPU governor, USB bind/unbind.
 # Every rule names an exact command line. Do not add one with a wildcard in
 # its arguments: sudoers lets `*` match spaces and slashes, so a rule such as
 # `tee /sys/.../cpu*/...` allows writing any file as root.
@@ -864,18 +862,12 @@ $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
 $USER ALL=(root) NOPASSWD: /usr/local/sbin/set-cpu-governor
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
-$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable --now trackpad-guard.service
-$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable --now trackpad-guard.service
-$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl kill -s SIGUSR1 trackpad-guard.service
-$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl kill -s SIGUSR2 trackpad-guard.service
-$USER ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /etc/trackpad-guard
-$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/trackpad-guard/config
 SUDOEOF
 sudo visudo -cf /etc/sudoers.d/lid-power
 success "Power management sudoers configured"
 
 # Browser theme sudoers (only if Brave or Chromium selected)
-if [ "$INSTALL_BRAVE" = "y" ] || [ "$INSTALL_CHROMIUM" = "y" ]; then
+if [ "$HAS_BRAVE" = "y" ] || [ "$INSTALL_CHROMIUM" = "y" ]; then
     info "Configuring sudoers for browser theme integration..."
     sudo mkdir -p /etc/brave/policies/managed /etc/chromium/policies/managed
     sudo tee /etc/sudoers.d/browser-theme > /dev/null <<SUDOEOF

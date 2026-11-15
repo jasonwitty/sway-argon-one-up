@@ -73,7 +73,7 @@ A reference guide for using the Sway desktop on Argon ONE UP. Covers keyboard sh
 
 | Shortcut | Action |
 |----------|--------|
-| **Mod+B** | Launch Brave browser |
+| **Mod+B** | Launch Brave Origin (or regular Brave, if you chose to keep it when upgrading) |
 | **Mod+N** | Open file manager (Thunar) |
 | **Mod+Ctrl+N** | Open the network panel (Wi-Fi, connection details, DNS). Navigate with arrows or h/j/k/l, Enter to act, Esc to close |
 | **Mod+Ctrl+B** | Open the Bluetooth panel (pair, connect, forget, power). Same keys as the network panel; **B** toggles Bluetooth, **X** forgets a device, **Tab** switches between the panels |
@@ -91,7 +91,6 @@ A reference guide for using the Sway desktop on Argon ONE UP. Covers keyboard sh
 | Shortcut | Action |
 |----------|--------|
 | **Mod+Shift+G** | Toggle disable-while-typing on/off |
-| **Mod+Shift+T** | USB rebind rescue for stuck touchpad (trackpad-guard mode only) |
 
 ### Media Keys
 
@@ -248,7 +247,7 @@ The AMIRA keyboard in the Argon ONE UP exposes its keyboard and touchpad as sepa
 
 From a terminal: `touchpad-mode on`, `touchpad-mode off`, `touchpad-mode toggle`, `touchpad-mode status`. The choice is written to the sway config, so it survives a reboot.
 
-The earlier `trackpad-guard` daemon is still installed, disabled, and likely to be removed. `touchpad-mode guard` switches back to it and `touchpad-mode native` away from it (log out and back in after switching to native). In guard mode, **Mod+Shift+T** is the USB rebind rescue for a stuck pointer; logs are in `journalctl -u trackpad-guard`.
+The earlier `trackpad-guard` daemon is retired: the installer no longer sets it up, and removes it when upgrading an older install. Its source is still in `trackpad-guard/` for anyone who wants to build it by hand.
 
 ---
 

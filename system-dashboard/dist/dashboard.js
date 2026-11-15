@@ -265,27 +265,17 @@ function renderTrackpad(t) {
   const sw = document.getElementById("trackpad-switch");
   const value = document.getElementById("trackpad-value");
   const sub = document.getElementById("trackpad-sub");
-  const slider = document.getElementById("gate-slider");
   card.classList.toggle("on", t.active);
   card.classList.toggle("off", !t.active);
   // Don't fight the user mid-toggle — if they just clicked the switch, the
   // optimistic state is reflected in `dataset.pending` until the next poll.
   if (sw.dataset.pending !== "1") sw.checked = t.active;
   value.textContent = t.active ? "On" : "Off";
-  sub.textContent = t.active
-    ? "Disabling touchpad while typing"
-    : "Always-on touchpad (no DWT)";
-
-  if (!sliderIsBeingDragged(slider)) slider.value = String(t.typing_gate_ms);
-  document.getElementById("gate-value").textContent = gateLabel(
-    t.typing_gate_ms,
-  );
-  // The gate only does anything while the guard is running.
-  slider.disabled = !t.active;
-}
-
-function gateLabel(ms) {
-  return ms === 0 ? "Off" : `${ms} ms`;
+  sub.textContent = t.guard
+    ? "trackpad-guard daemon in use (touchpad-mode native to switch)"
+    : t.active
+      ? "Paused while you type"
+      : "Stays live while you type";
 }
 
 // While the user is dragging the slider, don't fight them by overwriting
@@ -339,48 +329,17 @@ document.querySelectorAll(".clickable").forEach((card) => {
 bindSlider("brightness-slider", "set_brightness");
 bindSlider("volume-slider", "set_volume");
 
-// The gate slider is deliberately NOT bound with bindSlider: that helper sends
-// on every `input` tick (coalesced to ~80ms), which is right for brightness and
-// volume but wrong here — each send writes a root-owned config file through
-// `sudo tee`, so a single drag would spawn dozens of sudo processes. This fires
-// once, on release.
-(function bindGateSlider() {
-  const slider = document.getElementById("gate-slider");
-  const label = document.getElementById("gate-value");
-  const release = () => (slider.dataset.dragging = "0");
-  slider.addEventListener("pointerdown", () => (slider.dataset.dragging = "1"));
-  // Clear the drag flag even if the value never changed (a click that lands on
-  // the current value fires no `change`), or the poll loop would stop
-  // re-syncing this slider for the rest of the session.
-  slider.addEventListener("pointerup", release);
-  slider.addEventListener("pointercancel", release);
-  slider.addEventListener("input", () => {
-    label.textContent = gateLabel(Number(slider.value));
-  });
-  slider.addEventListener("change", () => {
-    invoke("set_typing_gate", { level: Number(slider.value) })
-      .catch((e) => console.error("set_typing_gate failed", e))
-      .finally(() => {
-        release();
-        // The daemon re-reads the file on its next 1s tick; re-sync after that
-        // so the displayed value is what the daemon actually adopted (it
-        // clamps out-of-range values rather than rejecting them).
-        setTimeout(refresh, 1200);
-      });
-  });
-})();
-
 (function bindTrackpadSwitch() {
   const sw = document.getElementById("trackpad-switch");
   sw.addEventListener("change", () => {
     sw.dataset.pending = "1";
-    invoke("toggle_trackpad_guard")
+    invoke("toggle_touchpad_dwt")
       .catch((e) => {
-        console.error("toggle_trackpad_guard failed", e);
+        console.error("toggle_touchpad_dwt failed", e);
         sw.checked = !sw.checked; // revert
       })
       .finally(() => {
-        // Re-sync from backend shortly after; systemd takes ~100-300ms.
+        // Re-sync from backend shortly after the switch has landed in sway.
         setTimeout(() => {
           sw.dataset.pending = "0";
           refresh();

@@ -10,7 +10,7 @@ A reference guide for using the Sway desktop on Argon ONE UP. Covers keyboard sh
 - [Theme Switching](#theme-switching)
 - [Fan Control](#fan-control)
 - [Battery and Power Management](#battery-and-power-management)
-- [Touchpad (trackpad-guard)](#touchpad-trackpad-guard)
+- [Touchpad (disable while typing)](#touchpad-disable-while-typing)
 - [Bluetooth Audio](#bluetooth-audio)
 - [Display Scaling](#display-scaling)
 - [Login Screen](#login-screen)
@@ -90,8 +90,8 @@ A reference guide for using the Sway desktop on Argon ONE UP. Covers keyboard sh
 
 | Shortcut | Action |
 |----------|--------|
-| **Mod+Shift+T** | USB rebind rescue for stuck touchpad |
-| **Mod+Shift+G** | Toggle trackpad-guard on/off |
+| **Mod+Shift+G** | Toggle disable-while-typing on/off |
+| **Mod+Shift+T** | USB rebind rescue for stuck touchpad (trackpad-guard mode only) |
 
 ### Media Keys
 
@@ -238,21 +238,17 @@ Brightness range: 5% – 100%. Current level is cached in `/tmp/.brightness_leve
 
 ---
 
-## Touchpad (trackpad-guard)
+## Touchpad (disable while typing)
 
-The AMIRA keyboard in the Argon ONE UP exposes its keyboard and touchpad as separate USB interfaces with different product IDs, so libinput's native DWT (disable-while-typing) can't associate them. `trackpad-guard` closes the gap:
-
-- Watches keyboard events directly via evdev, intercepts them, and replays through `/dev/uinput`.
-- Tracks a set of currently-pressed keys; toggles `swaymsg input type:touchpad events disabled|enabled` on transitions with a 150 ms grace period after the last release.
-- 2-second safety net: if any key is marked pressed but no events arrive for 2 s, force-clears state and re-enables the touchpad.
-- Self-healing watchdog: if the USB combo device drops off the bus, the daemon rebinds it.
+The AMIRA keyboard in the Argon ONE UP exposes its keyboard and touchpad as separate USB devices, so out of the box libinput never pairs them and its disable-while-typing does nothing. The installer tags both as internal (a libinput quirks file and a udev rule, from `touchpad-native/` — squeeby's approach), after which libinput's own disable-while-typing works with no daemon.
 
 | Shortcut | Action |
 |----------|--------|
-| **Mod+Shift+T** | Manual USB rebind rescue (last resort if pointer is stuck) |
-| **Mod+Shift+G** | Toggle trackpad-guard on/off (dashboard also has a toggle row) |
+| **Mod+Shift+G** | Toggle disable-while-typing on/off (the dashboard's Touchpad tile does the same) |
 
-Runs as a system service. Check status: `systemctl status trackpad-guard`. Logs: `journalctl -u trackpad-guard`.
+From a terminal: `touchpad-mode on`, `touchpad-mode off`, `touchpad-mode toggle`, `touchpad-mode status`. The choice is written to the sway config, so it survives a reboot.
+
+The earlier `trackpad-guard` daemon is still installed, disabled, and likely to be removed. `touchpad-mode guard` switches back to it and `touchpad-mode native` away from it (log out and back in after switching to native). In guard mode, **Mod+Shift+T** is the USB rebind rescue for a stuck pointer; logs are in `journalctl -u trackpad-guard`.
 
 ---
 

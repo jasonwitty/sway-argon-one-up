@@ -1,0 +1,28 @@
+# Argon ONE UP (AMIRA keyboard + touchpad combo, USB vendor 0x6080).
+# Installed to /etc/libinput/local-overrides.quirks by touchpad-mode.
+
+# The keyboard and touchpad enumerate as separate USB devices, so libinput
+# treats the keyboard as external and never pairs it with the touchpad for
+# disable-while-typing. Tag it internal. (Contributed by squeeby; see
+# https://linuxtouchpad.org/libinput/2022/05/07/disable-while-typing.html)
+#
+# Matched on vendor only: typing arrives on product 0x8060 on some units and
+# 0x8062 on others, and tagging the silent 0x8061 keyboard interface is
+# harmless.
+[Argon ONE UP internal keyboard]
+MatchUdevType=keyboard
+MatchBus=usb
+MatchVendor=0x6080
+AttrKeyboardIntegration=internal
+
+# The touchpad firmware intermittently labels an ordinary finger as a palm
+# (ABS_MT_TOOL_TYPE = MT_TOOL_PALM). libinput then discards that contact for
+# its whole life, which shows up as a cursor frozen for seconds to minutes.
+# The pad reports no size or pressure, so there is nothing to tune; ignore the
+# tool type instead. trackpad-guard does the same by rewriting PALM to FINGER.
+[Argon ONE UP touchpad]
+MatchUdevType=touchpad
+MatchBus=usb
+MatchVendor=0x6080
+MatchProduct=0x8061
+AttrEventCode=-ABS_MT_TOOL_TYPE;

@@ -28,7 +28,7 @@ struct Snapshot {
     fan: fan::FanState,
     brightness: brightness::BrightnessState,
     volume: volume::VolumeState,
-    trackpad: trackpad::TrackpadGuardState,
+    trackpad: trackpad::TrackpadState,
 }
 
 #[tauri::command]
@@ -78,15 +78,8 @@ fn open_fan_picker() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn toggle_trackpad_guard() -> Result<(), String> {
+fn toggle_touchpad_dwt() -> Result<(), String> {
     trackpad::toggle()
-}
-
-/// Typing-gate window in milliseconds. Named `level` to match the slider
-/// helper in dashboard.js, which sends every slider as `{ level }`.
-#[tauri::command]
-fn set_typing_gate(level: u16) -> Result<(), String> {
-    trackpad::set_typing_gate(level)
 }
 
 /// Detect whether we're running under a tiling window manager. Used to
@@ -161,8 +154,7 @@ fn main() {
             cycle_idle,
             open_theme_picker,
             open_fan_picker,
-            toggle_trackpad_guard,
-            set_typing_gate,
+            toggle_touchpad_dwt,
             set_brightness,
             set_volume
         ])

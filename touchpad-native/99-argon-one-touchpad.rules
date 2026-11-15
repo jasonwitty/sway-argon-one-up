@@ -1,0 +1,6 @@
+# Argon ONE UP: the built-in touchpad sits on USB, so libinput can take it for
+# an external device. Mark it internal so it pairs with the internal keyboard
+# for disable-while-typing. (Contributed by squeeby.)
+ACTION=="add|change", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", \
+  ATTRS{idVendor}=="6080", ATTRS{idProduct}=="8061", \
+  ENV{ID_INPUT_TOUCHPAD_INTEGRATION}="internal"

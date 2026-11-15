@@ -1,5 +1,13 @@
 # trackpad-guard
 
+> **Likely deprecated.** Typing protection on the Argon ONE UP now comes from
+> libinput's own disable-while-typing, set up by [`touchpad-native/`](../touchpad-native/)
+> (squeeby's approach) — no daemon. This daemon is still current, built and
+> installed, but left disabled, and the dashboard tile and `Mod+Shift+G` no
+> longer control it. It is kept as the fallback if native mode goes wrong:
+> `touchpad-mode guard` switches back to it, `touchpad-mode native` away from
+> it. It may be removed once native mode has had more time in daily use.
+
 A Rust daemon that sits between the AMIRA combo keyboard/touchpad (the input
 device in the [Argon ONE UP](https://argon40.com/products/argon-one-up-cm5-laptop-core-system)
 laptop) and libinput, forwarding touchpad events through a virtual device so it
@@ -71,9 +79,10 @@ Notes:
   `install.sh`; if you've run that before, replacing the binary and restarting
   is all an upgrade needs. **The installer does not rebuild an existing
   binary** — build and install by hand as above.
-- The service ships **disabled** (beta opt-in). Enable with `Mod+Shift+G`, the
-  system-dashboard trackpad tile, or
-  `sudo systemctl enable --now trackpad-guard.service`.
+- The service ships **disabled**: native libinput disable-while-typing is the
+  default. Switch to this daemon with `touchpad-mode guard` (and back with
+  `touchpad-mode native`). `Mod+Shift+G` and the dashboard tile toggle native
+  disable-while-typing, not this service.
 - It is a **system** service (it must exist before login, or the greeter has
   no pointer), so status and logs use plain `systemctl` / `journalctl`, not
   `--user`.
@@ -81,7 +90,7 @@ Notes:
 ## Runtime tuning — no rebuild, no restart
 
 The daemon re-reads `/etc/trackpad-guard/config` within ~1s of any change.
-Use the helper (also wired to the dashboard's slider):
+Use the helper:
 
 ```bash
 trackpad-guard-tune            # print the effective typing gate in ms
@@ -99,7 +108,7 @@ trackpad-guard-tune --taps off # let mid-typing taps through (old behavior)
 
 | Keys | Action |
 |---|---|
-| `Mod+Shift+G` | Toggle the service on/off (with a notification). |
+| `Mod+Shift+G` | Toggles native disable-while-typing now, not this service; use `touchpad-mode guard` / `native`. |
 | `Mod+Shift+U` | **First thing to try when stuck.** SIGUSR2 contact resync: releases every contact libinput might believe in and re-lands one fresh one. Safe — never touches USB, can't hang, can't lose the pointer. |
 | `Mod+Shift+T` | SIGUSR1 USB rebind — the heavier rescue (~1s blackout while the device re-enumerates). |
 

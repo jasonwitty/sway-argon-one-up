@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'system-dashboard-v*'
+      # Release-candidate builds: published as a pre-release under a tag the
+      # installer on main does not look for.
+      - 'rc-system-dashboard-v*'
   workflow_dispatch:
 
 permissions:
@@ -47,6 +50,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           fail_on_unmatched_files: true
           generate_release_notes: true
+          prerelease: ${{ startsWith(github.ref_name, 'rc-') }}
 
       - name: Upload workflow artifact (for workflow_dispatch runs)
         if: github.event_name == 'workflow_dispatch'

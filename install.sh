@@ -747,7 +747,7 @@ else
     # (e.g. a release-candidate build); otherwise take the newest one.
     SD_TAG="${SD_TAG:-}"
     [ -n "$SD_TAG" ] || SD_TAG=$(curl -fsSL "https://api.github.com/repos/jasonwitty/sway-argon-one-up/releases" 2>/dev/null \
-        | jq -r '[.[] | select(.tag_name | startswith("system-dashboard-v"))][0].tag_name // empty')
+        | jq -r '[.[] | select(.tag_name | startswith("rc-system-dashboard-v"))][0].tag_name // empty')  # RC-ONLY: revert the prefix to "system-dashboard-v" before merging to main
     if [ -z "$SD_TAG" ]; then
         error "Could not find a published system-dashboard release on GitHub."
         error "Check https://github.com/jasonwitty/sway-argon-one-up/releases or tag a release."

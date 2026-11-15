@@ -12,6 +12,14 @@ Starting from a fresh [Raspberry Pi OS Lite](https://www.raspberrypi.com/softwar
 curl -fsSL https://raw.githubusercontent.com/jasonwitty/sway-argon-one-up/main/install.sh | bash
 ```
 
+<!-- RC-ONLY: remove this block before merging to main -->
+**Testing the 1.0 release candidate?** Install from this branch instead:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jasonwitty/sway-argon-one-up/v.1.0_RC1/install.sh | REPO_BRANCH=v.1.0_RC1 bash
+```
+<!-- /RC-ONLY -->
+
 See the [Installation Guide](Installation.md) for detailed step-by-step instructions including how to flash the NVMe drive and configure initial settings. To upgrade an existing install, run the same command again — see [Upgrading](Installation.md#upgrading).
 
 ## Hardware

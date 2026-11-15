@@ -187,7 +187,7 @@ header .title {
   vertical-align: 2px;
 }
 
-/* iOS-style toggle switch (used by trackpad-guard card) */
+/* iOS-style toggle switch (used by the touchpad card) */
 .switch {
   position: relative;
   display: inline-block;

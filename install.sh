@@ -555,6 +555,31 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger --action=change --subsystem-match=input
 sudo udevadm trigger --action=change /sys/class/misc/uinput 2>/dev/null || true
 
+sudo install -m 0755 "$REPO_DIR/trackpad-guard/scripts/trackpad-guard-tune.sh" \
+    /usr/local/bin/trackpad-guard-tune
+
+# Runtime tunables the daemon re-reads on mtime change (no restart). Seeded
+# with the compiled default so the file is self-documenting and
+# trackpad-guard-tune has something to read on a fresh install.
+sudo mkdir -p /etc/trackpad-guard
+if [ ! -f /etc/trackpad-guard/config ]; then
+    sudo tee /etc/trackpad-guard/config > /dev/null <<'TPGEOF'
+# trackpad-guard runtime tunables. Written by trackpad-guard-tune; the
+# daemon re-reads this file within ~1s of any change (no restart needed).
+#
+# typing_gate_ms — touchpad events arriving within this many milliseconds of a
+#   keystroke are dropped (palm protection while typing). 0 disables the gate.
+#   Compiled default is 200ms; accepted range is 0-500ms.
+#
+# gate_taps — whether the gate also hides a finger that LANDS while you are
+#   typing. Taps are synthesized by libinput from a touch-down/touch-up pair,
+#   so with this off a palm brushing the pad mid-sentence becomes a real click
+#   at wherever the pointer happened to be. Off restores the pre-2026-08-20
+#   behavior; only useful for A/B testing.
+typing_gate_ms=200
+gate_taps=true
+TPGEOF
+fi
 # trackpad-guard is now a SYSTEM service (not user). It needs to run
 # during the greeter's sway session as well — the system-wide udev rule
 # above tells libinput to ignore the real AMIRA touchpad, so without a
@@ -577,12 +602,29 @@ info "Installing trackpad-guard systemd system unit..."
 sudo install -m 0644 "$REPO_DIR/trackpad-guard/systemd/trackpad-guard.service" \
     /etc/systemd/system/trackpad-guard.service
 sudo systemctl daemon-reload
-# Beta opt-in: trackpad-guard ships disabled. The user enables it from the
-# system-dashboard tile or with Mod+Shift+G. Force-disable on every install
-# (including upgrades) so the beta state is consistent — if you relied on
-# it being on, just toggle it back on once after the upgrade.
+# trackpad-guard is likely deprecated: it stays installed but disabled, as the
+# fallback behind `touchpad-mode guard`. Typing protection now comes from
+# libinput's own disable-while-typing, set up just below.
 sudo systemctl disable --now trackpad-guard.service 2>/dev/null || true
-success "trackpad-guard installed (disabled by default — enable via dashboard or Mod+Shift+G)"
+success "trackpad-guard installed (disabled — fallback only, see touchpad-mode guard)"
+
+# Native libinput disable-while-typing (squeeby's approach): a quirks file and
+# a udev rule tag the AMIRA keyboard and touchpad as internal so libinput
+# pairs them. On by default; the dashboard tile and Mod+Shift+G turn it off
+# and on with `touchpad-mode toggle`. Takes effect at the next login.
+info "Installing native touchpad disable-while-typing..."
+sudo install -d -m 0755 /usr/local/share/touchpad-native
+sudo install -m 0644 "$REPO_DIR/touchpad-native/local-overrides.quirks" \
+    "$REPO_DIR/touchpad-native/99-argon-one-touchpad.rules" \
+    /usr/local/share/touchpad-native/
+sudo install -m 0755 "$REPO_DIR/touchpad-native/touchpad-mode" \
+    /usr/local/share/touchpad-native/touchpad-mode
+sudo ln -sf /usr/local/share/touchpad-native/touchpad-mode /usr/local/bin/touchpad-mode
+if /usr/local/bin/touchpad-mode native; then
+    success "Native disable-while-typing installed (toggle via dashboard or Mod+Shift+G)"
+else
+    warn "Could not set up native disable-while-typing — run 'touchpad-mode native' after install"
+fi
 
 # With argon-battery-rs owning battery polling + CW2217 self-heal, and
 # argon-lid-monitor owning lid events, Argon's Python daemons have nothing
@@ -686,6 +728,8 @@ if [ "$INSTALL_BRAVE" = "y" ] || [ "$INSTALL_CHROMIUM" = "y" ]; then
     sudo mkdir -p /etc/brave/policies/managed /etc/chromium/policies/managed
     sudo tee /etc/sudoers.d/browser-theme > /dev/null <<SUDOEOF
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/brave/policies/managed/color.json
+$USER ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /etc/trackpad-guard
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/trackpad-guard/config
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/chromium/policies/managed/color.json
 SUDOEOF
     sudo visudo -cf /etc/sudoers.d/browser-theme

@@ -1,0 +1,96 @@
+#!/bin/bash
+# clock-label — the date/time label in waybar, with a format you can cycle.
+#
+#   clock-label          print the label now and again at every tick (waybar's
+#                        custom/clock module runs this and shows each line)
+#   clock-label cycle    switch to the next format (right-click on the clock)
+#
+# A port of the right-click behaviour of Omarchy's clock widget: the same ring
+# of formats (its Qt format strings rewritten for strftime), walked in a fixed
+# order and remembered across restarts. The format in use is kept as a single
+# strftime string in ~/.config/quickshell/clock-format, so a hand-written one
+# works too; cycling from it starts the ring at the top.
+
+FORMAT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/clock-format"
+PID_DIR="${XDG_RUNTIME_DIR:-/tmp}/clock-label"
+
+FORMATS=(
+    '%a %b %d  %H:%M'
+    '%A %H:%M'
+    '%A %-I:%M %p'
+    '%A %H:%M:%S'
+    '%A %-I:%M:%S %p'
+    '%H:%M'
+    '%-I:%M %p'
+    '%a %-d %b %H:%M'
+    '%a %-d %b %-I:%M %p'
+    '%-d %B W%V %Y'
+    '%Y-%m-%d %H:%M'
+)
+
+current_format() {
+    local format=""
+    [[ -r $FORMAT_FILE ]] && IFS= read -r format < "$FORMAT_FILE"
+    printf '%s' "${format:-${FORMATS[0]}}"
+}
+
+cycle() {
+    local current next i
+    current=$(current_format)
+    next=${FORMATS[0]}
+    for i in "${!FORMATS[@]}"; do
+        if [[ ${FORMATS[i]} == "$current" ]]; then
+            next=${FORMATS[(i + 1) % ${#FORMATS[@]}]}
+            break
+        fi
+    done
+    mkdir -p "$(dirname "$FORMAT_FILE")"
+    printf '%s\n' "$next" > "$FORMAT_FILE"
+
+    # Wake every running label so the bar changes on the click itself.
+    local marker pid
+    for marker in "$PID_DIR"/*; do
+        [[ -e $marker ]] || continue
+        pid=${marker##*/}
+        kill -USR1 "$pid" 2>/dev/null || rm -f "$marker"
+    done
+}
+
+run() {
+    mkdir -p "$PID_DIR"
+    : > "$PID_DIR/$$"
+    trap 'rm -f "$PID_DIR/$$"' EXIT
+    trap 'exit 0' TERM INT HUP PIPE
+    # Only has to interrupt the wait below.
+    trap ':' USR1
+
+    local format delay ns sleeper
+    while :; do
+        format=$(current_format)
+        printf "%(${format})T\n" -1 || exit 0
+
+        # Sleep to the next tick rather than a fixed interval, so the label
+        # turns over with the clock: every second for a format that prints
+        # seconds, otherwise once a minute.
+        if [[ $format =~ %-?[STsrc] ]]; then
+            ns=$((1000000000 - 10#$(date +%N)))
+            ((ns > 999999999)) && ns=999999999
+            printf -v delay '0.%09d' "$ns"
+        else
+            delay="$((60 - 10#$(date +%S))).05"
+        fi
+        sleep "$delay" &
+        sleeper=$!
+        wait "$sleeper" 2>/dev/null
+        kill "$sleeper" 2>/dev/null
+    done
+}
+
+case "${1:-run}" in
+    run) run ;;
+    cycle) cycle ;;
+    *)
+        echo "Usage: clock-label [cycle]" >&2
+        exit 2
+        ;;
+esac

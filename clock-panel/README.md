@@ -12,6 +12,7 @@ the Quickshell build and the licence.
 |---|---|
 | `ClockPanel.qml`, `Model.js`, `WallClock.qml` | Omarchy's panel, adapted (see the header comment for what changed) |
 | `../bin/clock-panel` | Opens / closes the panel |
+| `../bin/clock-label` | The date/time label in waybar; right-click cycles its format |
 
 Keys: left / right step a month, up / down a year, `t` or Enter returns to
 today, `w` (or clicking the `W` heading) switches weeks between starting on
@@ -19,7 +20,10 @@ Sunday and Monday, Esc closes.
 
 ## Differences from Omarchy
 
-- **The bar label** stays waybar's own clock module; only the popup is ported.
+- **The bar label** is a waybar custom module fed by `clock-label`, not a
+  Quickshell widget. Right-click walks the same ring of formats as Omarchy
+  (rewritten for strftime); the choice is kept in
+  `~/.config/quickshell/clock-format`. There is no middle-click timezone menu.
 - **Settings** (week start, and the optional birth year behind a double-click
   on the year bar) are kept in `~/.config/quickshell/clock-panel.json`
   instead of Omarchy's `shell.json`.

@@ -16,7 +16,7 @@ import "Model.js" as Model
 // day, and the only thing that moves is which month is on screen —
 // chevrons, the scroll wheel, and the arrow keys all step it.
 //
-// What changed from upstream: the bar label stays waybar's own clock module,
+// What changed from upstream: the bar label is a waybar module (bin/clock-label),
 // the KeyboardPanel scaffolding became the PanelWindow at the bottom of this
 // file, and the few settings live in a small JSON file instead of Omarchy's
 // shell.json. Omarchy's world clock and weather panels are not ported.

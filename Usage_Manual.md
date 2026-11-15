@@ -77,7 +77,7 @@ A reference guide for using the Sway desktop on Argon ONE UP. Covers keyboard sh
 | **Mod+N** | Open file manager (Thunar) |
 | **Mod+Ctrl+N** | Open the network panel (Wi-Fi, connection details, DNS). Navigate with arrows or h/j/k/l, Enter to act, Esc to close |
 | **Mod+Ctrl+B** | Open the Bluetooth panel (pair, connect, forget, power). Same keys as the network panel; **B** toggles Bluetooth, **X** forgets a device, **Tab** switches between the panels |
-| **Mod+Ctrl+C** | Open the calendar (also: click the clock in the bar). Left/right step a month, up/down a year, **T** returns to today, **W** switches the week start |
+| **Mod+Ctrl+C** | Open the calendar (also: click the clock in the bar; right-click the clock to change its date/time format). Left/right step a month, up/down a year, **T** returns to today, **W** switches the week start |
 | **Mod+C** | Open Claude Code |
 | **Mod+Shift+C** | Quick Claude prompt (wofi popup) |
 | **Mod+T** | Theme picker |

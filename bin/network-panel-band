@@ -5,7 +5,7 @@
 #   network-panel-band            print band, available bands and the pin
 #   network-panel-band auto|2.4|5|6
 #
-# Ported from Omarchy's omarchy-network-band (MIT, see network-panel/LICENSE-omarchy).
+# Ported from Omarchy's omarchy-network-band (MIT, see quickshell-panels/LICENSE-omarchy).
 
 set -euo pipefail
 

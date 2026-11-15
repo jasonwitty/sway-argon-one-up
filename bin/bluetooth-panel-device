@@ -1,0 +1,94 @@
+#!/bin/bash
+# bluetooth-panel-device — pair, connect, disconnect or forget a device.
+#
+#   bluetooth-panel-device pair|connect|disconnect|forget <address>
+#
+# Ported from Omarchy's omarchy-bluetooth-device (MIT, see
+# quickshell-panels/LICENSE-omarchy). One addition: after a connect, the device's
+# audio sink is made the default output. Omarchy does that in the panel through
+# Quickshell's PipeWire module, which this build leaves out.
+
+set -e
+
+usage() {
+  echo "Usage: bluetooth-panel-device [pair|connect|disconnect|forget] <address>" >&2
+  exit 1
+}
+
+action=${1:-}
+address=${2:-}
+
+[[ $action == "pair" || $action == "connect" || $action == "disconnect" || $action == "forget" ]] || usage
+[[ $address =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || usage
+
+power_on() {
+  [[ $(timeout 2s bluetoothctl show 2>/dev/null) == *"Powered: yes"* ]] && return
+  # Not bluetoothctl directly: Bluetooth is turned off by an rfkill soft block,
+  # and BlueZ refuses to power an adapter up while one is set.
+  bluetooth-panel-power on || true
+}
+
+trust_device() {
+  bluetoothctl trust "$address" >/dev/null 2>&1 || true
+}
+
+# Id of the PipeWire sink belonging to this address, if it has one yet. With
+# "a2dp" as the argument only a stereo (A2DP) sink counts.
+sink_id() {
+  pw-dump 2>/dev/null | jq -r --arg mac "${address^^}" --arg want "${1:-}" '
+    [ .[]
+      | select(.info.props["media.class"] == "Audio/Sink")
+      | select((.info.props["api.bluez5.address"] // "" | ascii_upcase) == $mac)
+      | select($want == "" or ((.info.props["api.bluez5.profile"] // "") | startswith($want)))
+      | .id ][0] // empty'
+}
+
+# Make the device that was just connected the default output. The default is
+# chosen from the address that actually connected rather than left to a
+# remembered node name: earbuds that present a different address depending on
+# which bud is primary would otherwise stay pinned to the absent one.
+#
+# bt-a2dp-guard may still be moving a headset from mono HFP to A2DP, which
+# replaces the sink, so prefer waiting for the A2DP sink and only settle for
+# whatever sink exists once the wait runs out. Devices with no audio (mice,
+# keyboards) never get a sink and simply fall through.
+select_audio_output() {
+  command -v pw-dump >/dev/null && command -v wpctl >/dev/null && command -v jq >/dev/null || return 0
+
+  local id="" deadline=$((SECONDS + 12))
+
+  while ((SECONDS < deadline)); do
+    [[ $(bluetoothctl info "$address" 2>/dev/null) == *"Connected: yes"* ]] || return 0
+    id=$(sink_id a2dp)
+    [[ -n $id ]] && break
+    sleep 1
+  done
+
+  [[ -n $id ]] || id=$(sink_id)
+  [[ -n $id ]] || return 0
+  wpctl set-default "$id" >/dev/null 2>&1 || true
+}
+
+case "$action" in
+  pair)
+    power_on
+    timeout 20s bluetoothctl pair "$address" >/dev/null 2>&1 || true
+    trust_device
+    timeout 20s bluetoothctl connect "$address" >/dev/null 2>&1 || true
+    select_audio_output
+    ;;
+  connect)
+    power_on
+    trust_device
+    timeout 20s bluetoothctl connect "$address" >/dev/null 2>&1 || true
+    select_audio_output
+    ;;
+  disconnect)
+    timeout 10s bluetoothctl disconnect "$address" >/dev/null 2>&1 || true
+    ;;
+  forget)
+    power_on
+    timeout 10s bluetoothctl disconnect "$address" >/dev/null 2>&1 || true
+    timeout 10s bluetoothctl remove "$address" >/dev/null 2>&1 || true
+    ;;
+esac

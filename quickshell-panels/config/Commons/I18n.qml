@@ -3,9 +3,9 @@ import QtQuick
 import "Numbers.js" as Numbers
 
 // English-only stand-in for Omarchy's I18n singleton, which loads per-language
-// catalogs from an Omarchy install. The strings are the `network.*` and
+// catalogs from an Omarchy install. The strings are the `bluetooth.*`, `network.*` and
 // `wifiqr.*` entries of Omarchy's default/i18n/en/shell.json (MIT, see
-// LICENSE-omarchy), so the panel code can keep calling I18n.t() unchanged.
+// quickshell-panels/LICENSE-omarchy), so the panel code can keep calling I18n.t() unchanged.
 QtObject {
   id: root
 
@@ -22,6 +22,34 @@ QtObject {
   }
 
   readonly property var strings: ({
+    "bluetooth.available": "AVAILABLE",
+    "bluetooth.connect": "Connect",
+    "bluetooth.connected": "CONNECTED",
+    "bluetooth.connectedStatus": "Connected",
+    "bluetooth.connecting": "Connecting…",
+    "bluetooth.device": "Device",
+    "bluetooth.disconnect": "Disconnect",
+    "bluetooth.disconnecting": "Disconnecting…",
+    "bluetooth.forget": "Forget",
+    "bluetooth.forgetting": "Forgetting…",
+    "bluetooth.noAdapter": "No adapter",
+    "bluetooth.noBluetoothAdapter": "No Bluetooth adapter",
+    "bluetooth.pair": "Pair",
+    "bluetooth.paired": "PAIRED",
+    "bluetooth.phrase1": "Untangling wires",
+    "bluetooth.phrase2": "Streaming vikings",
+    "bluetooth.phrase3": "Pairing mysteries",
+    "bluetooth.phrase4": "Herding headsets",
+    "bluetooth.phrase5": "Taming radios",
+    "bluetooth.phrase6": "Summoning speakers",
+    "bluetooth.phrase7": "Wrangling codecs",
+    "bluetooth.phrase8": "Polishing packets",
+    "bluetooth.scanning": "Scanning for devices…",
+    "bluetooth.title": "Bluetooth",
+    "bluetooth.turnOff": "Turn Bluetooth off",
+    "bluetooth.turnOn": "Turn Bluetooth on",
+    "bluetooth.turnOnToScan": "Turn Bluetooth on to scan",
+    "bluetooth.turnedOff": "Turned Off",
     "network.automatic": "AUTOMATIC",
     "network.bandAuto": "Auto",
     "network.bandAutoTooltip": "Let Wi-Fi pick the band",

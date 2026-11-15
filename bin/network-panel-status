@@ -2,7 +2,7 @@
 
 # network-panel-status — Print active network status for the shell
 #
-# Ported from Omarchy's omarchy-network-status (MIT, see network-panel/LICENSE-omarchy).
+# Ported from Omarchy's omarchy-network-status (MIT, see quickshell-panels/LICENSE-omarchy).
 
 verbose=false
 internet_probe=1.1.1.1

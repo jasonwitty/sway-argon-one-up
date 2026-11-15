@@ -1,4 +1,4 @@
-# Builds the network panel's Quickshell binary in a clean Debian trixie
+# Builds the panels' Quickshell binary in a clean Debian trixie
 # container, so the result links against stock trixie Qt (6.8.2) and can be
 # published as a release asset. The recipe itself lives in build-quickshell.sh.
 FROM debian:trixie

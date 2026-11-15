@@ -1,0 +1,55 @@
+#!/bin/bash
+# panels — run the Quickshell process that hosts the network and Bluetooth panels.
+#
+#   panels start|stop|restart        manage the daemon (Sway execs `panels start`)
+#   panels call <target> <function>  call a panel over IPC, starting the daemon
+#                                    first if needed (used by network-panel and
+#                                    bluetooth-panel)
+
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/panels"
+export PATH="$HOME/.local/bin:$PATH"
+
+running() {
+    quickshell ipc -p "$CONFIG" show >/dev/null 2>&1
+}
+
+start() {
+    # exec_always re-runs this on every Sway reload; one instance is enough.
+    running && return 0
+    setsid -f quickshell -p "$CONFIG" >/dev/null 2>&1
+}
+
+case "${1:-}" in
+    start)
+        start
+        ;;
+    stop)
+        quickshell kill -p "$CONFIG" >/dev/null 2>&1
+        ;;
+    restart)
+        quickshell kill -p "$CONFIG" >/dev/null 2>&1
+        # kill returns before the old instance is gone; starting while it
+        # still answers IPC would be a no-op and leave nothing running.
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            running || break
+            sleep 0.2
+        done
+        start
+        ;;
+    call)
+        [[ -n ${2:-} && -n ${3:-} ]] || { echo "Usage: panels call <target> <function>" >&2; exit 2; }
+        if ! running; then
+            start
+            # Wait for the IPC socket rather than a fixed sleep.
+            for _ in $(seq 1 50); do
+                running && break
+                sleep 0.1
+            done
+        fi
+        quickshell ipc -p "$CONFIG" call "$2" "$3" >/dev/null 2>&1
+        ;;
+    *)
+        echo "Usage: panels [start|stop|restart|call <target> <function>]" >&2
+        exit 2
+        ;;
+esac

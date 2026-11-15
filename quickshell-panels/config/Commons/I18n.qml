@@ -3,13 +3,15 @@ import QtQuick
 import "Numbers.js" as Numbers
 
 // English-only stand-in for Omarchy's I18n singleton, which loads per-language
-// catalogs from an Omarchy install. The strings are the `bluetooth.*`, `network.*` and
+// catalogs from an Omarchy install. The strings are the `bluetooth.*`, `clock.*`, `network.*` and
 // `wifiqr.*` entries of Omarchy's default/i18n/en/shell.json (MIT, see
 // quickshell-panels/LICENSE-omarchy), so the panel code can keep calling I18n.t() unchanged.
 QtObject {
   id: root
 
   readonly property bool rightToLeft: false
+  // Month and weekday names come from the system locale.
+  readonly property string formatLocale: Qt.locale().name
 
   function t(key, fallback) {
     var value = root.strings[key]
@@ -50,6 +52,18 @@ QtObject {
     "bluetooth.turnOn": "Turn Bluetooth on",
     "bluetooth.turnOnToScan": "Turn Bluetooth on to scan",
     "bluetooth.turnedOff": "Turned Off",
+    "clock.backToToday": "Back to today",
+    "clock.born": "BORN",
+    "clock.dayMonthFormat": "MMMM d",
+    "clock.life": "LIFE",
+    "clock.liveTo": "LIVE TO",
+    "clock.monthYear": "%1 %2",
+    "clock.nextMonth": "Next month",
+    "clock.previousMonth": "Previous month",
+    "clock.startWeeksOn": "Start weeks on %1",
+    "clock.toggleFormat": "Right-click to toggle format",
+    "clock.weekShort": "W",
+    "clock.year": "year",
     "network.automatic": "AUTOMATIC",
     "network.bandAuto": "Auto",
     "network.bandAutoTooltip": "Let Wi-Fi pick the band",

@@ -7,11 +7,12 @@ that waybar and the Sway keybinds toggle over IPC.
 
 | Path | What it is |
 |---|---|
-| `config/shell.qml` | Host: loads both panels, keeps only one open, Tab swaps them |
+| `config/shell.qml` | Host: loads the panels, keeps only one open, Tab walks between them |
 | `config/Commons/`, `config/Ui/` | The subset of Omarchy's shared style and UI kit the panels need |
 | `quickshell-build/` | Build recipe for Quickshell, which trixie does not package |
 | `../network-panel/` | The network panel |
 | `../bluetooth-panel/` | The Bluetooth panel |
+| `../clock-panel/` | The calendar panel |
 | `../bin/panels` | Starts / stops the process and forwards IPC calls |
 | `../sway-themes/templates/panels-colors.toml` | Theme template; `switch-theme` renders it and the panels recolour live |
 
@@ -21,6 +22,7 @@ Installed layout, under `~/.config/quickshell/panels/`:
 shell.qml  Commons/  Ui/     from config/
 network/                     from ../network-panel/
 bluetooth/                   from ../bluetooth-panel/
+clock/                       from ../clock-panel/
 theme/colors.toml            rendered by switch-theme
 ```
 

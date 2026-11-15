@@ -736,7 +736,7 @@ success ".desktop entry installed"
 # ---------------------------------------------------------------------------
 # Phase 9c: Network + Bluetooth panels (Quickshell ports of the Omarchy ones)
 # ---------------------------------------------------------------------------
-phase "Phase 9c: Network and Bluetooth panels"
+phase "Phase 9c: Network, Bluetooth and calendar panels"
 
 # Qt runtime the panels need, plus the tools the network helper scripts call:
 # iw (link details, band), ping (latency) and qrencode (Wi-Fi share card).
@@ -752,10 +752,11 @@ mkdir -p "$HOME/.config/quickshell"
 rm -rf "$HOME/.config/quickshell/panels" "$HOME/.config/quickshell/network-panel"
 cp -r "$REPO_DIR/quickshell-panels/config" "$HOME/.config/quickshell/panels"
 # Each panel is its own folder in the repo; Quickshell loads them as the
-# qs.network and qs.bluetooth modules next to the shared Commons/ and Ui/.
-mkdir -p "$HOME/.config/quickshell/panels/network" "$HOME/.config/quickshell/panels/bluetooth"
+# qs.network, qs.bluetooth and qs.clock modules next to the shared Commons/ and Ui/.
+mkdir -p "$HOME/.config/quickshell/panels/network" "$HOME/.config/quickshell/panels/bluetooth" "$HOME/.config/quickshell/panels/clock"
 cp "$REPO_DIR"/network-panel/*.qml "$REPO_DIR"/network-panel/*.js "$HOME/.config/quickshell/panels/network/"
 cp "$REPO_DIR"/bluetooth-panel/*.qml "$REPO_DIR"/bluetooth-panel/*.js "$HOME/.config/quickshell/panels/bluetooth/"
+cp "$REPO_DIR"/clock-panel/*.qml "$REPO_DIR"/clock-panel/*.js "$HOME/.config/quickshell/panels/clock/"
 
 # Quickshell is not packaged for trixie and links against private Qt APIs, so
 # a binary only works with the Qt it was built for. Prefer a prebuilt release

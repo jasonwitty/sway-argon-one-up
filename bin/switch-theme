@@ -84,8 +84,6 @@ apply_theme() {
     mkdir -p "$HOME/.config/quickshell/panels/theme"
     render_template "$TEMPLATES_DIR/panels-colors.toml" "$HOME/.config/quickshell/panels/theme/colors.toml"
 
-    # Update waybar config calendar colors
-    sed -i "s/background=\\\\\"#[0-9a-fA-F]\{6\}\\\\\"/background=\\\\\"#${BLUE}\\\\\"/g; s/color=\\\\\"#[0-9a-fA-F]\{6\}\\\\\"/color=\\\\\"#${BASE}\\\\\"/g" "$HOME/.config/waybar/config"
 
     # Update GTK theme
     sed -i "s/^gtk-theme-name=.*/gtk-theme-name=$GTK_THEME/" "$HOME/.config/gtk-3.0/settings.ini"

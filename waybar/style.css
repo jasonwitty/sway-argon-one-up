@@ -100,7 +100,8 @@ window#waybar {
   color: #e78284;
 }
 
-#clock {
+#clock,
+#custom-clock {
   color: #f2d5cf;
 }
 

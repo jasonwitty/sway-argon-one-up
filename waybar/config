@@ -5,7 +5,7 @@
     "sway/workspaces"
   ],
   "modules-center": [
-    "clock"
+    "custom/clock"
   ],
   "modules-right": [
     "custom/recording",
@@ -78,16 +78,6 @@
     "on-click": "~/.local/bin/bluetooth-panel toggle",
     "on-click-right": "~/.local/bin/bluetooth-panel toggleBluetooth"
   },
-  "clock": {
-    "format": "{:%a %b %d  %H:%M}",
-    "tooltip-format": "<tt>{calendar}</tt>",
-    "calendar": {
-      "mode": "month",
-      "format": {
-        "today": "<b><span background=\"#8caaee\" color=\"#303446\">{}</span></b>"
-      }
-    }
-  },
   "backlight": {
     "format": "󰃠 {percent}%",
     "tooltip": false
@@ -153,5 +143,12 @@
     "format": "⏻",
     "tooltip": false,
     "on-click": "~/.local/bin/power-prompt"
+  },
+  },
+  "custom/clock": {
+    "exec": "~/.local/bin/clock-label",
+    "tooltip": false,
+    "on-click": "~/.local/bin/clock-panel toggle",
+    "on-click-right": "~/.local/bin/clock-label cycle"
   }
 }

@@ -14,7 +14,7 @@ bad()  { echo "✗ $*"; FAIL=$((FAIL+1)); }
 skip() { echo "↷ $*"; SKIP=$((SKIP+1)); }
 
 step "apt update"
-sudo apt-get update >/dev/null 2>&1 && ok "apt-get update" || bad "apt-get update"
+if sudo apt-get update >/dev/null 2>&1; then ok "apt-get update"; else bad "apt-get update"; fi
 
 step "Phase 3: core package availability (simulate)"
 CORE_PKGS=(

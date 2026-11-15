@@ -136,9 +136,20 @@ fn main() {
                 force_power_off();
                 return;
             }
-            Outcome::ReaderGone => return,
+            Outcome::ReaderGone => reader_gone(),
         }
     }
+
+    // rx.recv() failed: the reader thread is gone.
+    reader_gone();
+}
+
+/// The thread reading the power button died (it logs why). Exit non-zero so
+/// Restart=on-failure brings the daemon back; exiting 0 left it down for the
+/// rest of the session with only logind's long-press handling.
+fn reader_gone() -> ! {
+    eprintln!("power-button-guard: power button reader stopped; exiting for a restart");
+    std::process::exit(1);
 }
 
 enum Outcome {

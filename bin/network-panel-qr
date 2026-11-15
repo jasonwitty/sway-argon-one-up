@@ -71,15 +71,21 @@ fi
 uuid=$(nmcli --get-values GENERAL.CON-UUID device show "$interface" | head -n 1)
 [[ -n $uuid && $uuid != "--" ]] || { echo "No active Wi-Fi connection" >&2; exit 1; }
 
-mapfile -t fields < <(nmcli --show-secrets --escape no --get-values \
-  802-11-wireless.ssid,802-11-wireless-security.key-mgmt,802-11-wireless-security.psk,802-11-wireless.hidden,802-11-wireless-security.wep-key0 \
-  connection show uuid "$uuid")
+# One field per call. Asked for several at once, nmcli prints no line at all
+# for a field whose setting is absent -- and an open network has no
+# 802-11-wireless-security setting -- so reading the answers by position
+# shifted them: key-mgmt received the value of `hidden`, and every open network
+# failed with "Could not read the Wi-Fi password".
+profile_field() {
+  nmcli --show-secrets --escape no --get-values "$1" connection show uuid "$uuid" 2>/dev/null | head -n 1 || true
+}
 
-ssid=${fields[0]:-}
-key_management=${fields[1]:-}
-password=${fields[2]:-}
-hidden=${fields[3]:-no}
-wep_key=${fields[4]:-}
+ssid=$(profile_field 802-11-wireless.ssid)
+key_management=$(profile_field 802-11-wireless-security.key-mgmt)
+password=$(profile_field 802-11-wireless-security.psk)
+hidden=$(profile_field 802-11-wireless.hidden)
+hidden=${hidden:-no}
+wep_key=$(profile_field 802-11-wireless-security.wep-key0)
 
 [[ -n $ssid ]] || { echo "Could not read the Wi-Fi name" >&2; exit 1; }
 [[ $key_management != *eap* && $key_management != *ieee8021x* ]] || {
@@ -93,6 +99,7 @@ escape_wifi_qr() {
   value=${value//;/\\;}
   value=${value//,/\\,}
   value=${value//:/\\:}
+  value=${value//\"/\\\"}
   printf '%s' "$value"
 }
 

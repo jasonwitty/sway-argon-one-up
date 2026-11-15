@@ -100,7 +100,7 @@
   "custom/argon-battery": {
     "exec": "/usr/local/bin/argon-battery-rs",
     "return-type": "json",
-    "interval": 1,
+    "interval": 2,
     "tooltip": true,
     "on-click": "~/.local/bin/power-mode toggle"
   },
@@ -115,13 +115,15 @@
   "custom/theme": {
     "exec": "~/.local/bin/switch-theme --waybar-status",
     "return-type": "json",
-    "interval": 1,
+    "interval": "once",
+    "signal": 8,
     "tooltip": true,
     "on-click": "swaymsg exec ~/.local/bin/switch-theme\\ --picker"
   },
   "custom/scale": {
     "exec": "~/.local/bin/sway-scale get",
-    "interval": 2,
+    "interval": 30,
+    "signal": 10,
     "format": "󰍉 {}",
     "tooltip": false,
     "on-click": "swaymsg exec ~/.local/bin/sway-scale\\ picker"
@@ -129,14 +131,16 @@
   "custom/idle": {
     "exec": "~/.local/bin/idle-toggle status",
     "return-type": "json",
-    "interval": 5,
+    "interval": 30,
+    "signal": 11,
     "tooltip": true,
     "on-click": "~/.local/bin/idle-toggle cycle"
   },
   "custom/recording": {
     "exec": "~/.local/bin/screen-record status",
     "return-type": "json",
-    "interval": 1,
+    "interval": 10,
+    "signal": 9,
     "tooltip": true
   },
   "custom/power": {

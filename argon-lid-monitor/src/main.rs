@@ -6,16 +6,32 @@
 //! Argon's `argononeupd.py` — the lid GPIO isn't exposed via standard
 //! Linux ACPI, so this is the only path to react to lid motion.
 
-use gpiocdev::line::{Bias, EdgeDetection, EdgeKind};
+use gpiocdev::line::{Bias, EdgeDetection, EdgeKind, Value};
 use gpiocdev::Request;
 use std::process::Command;
 use std::time::Duration;
 
 const GPIO_CHIP: &str = "/dev/gpiochip0";
 const LID_LINE: u32 = 27;
-/// Ignore subsequent edges for this window after firing — cheap debounce
-/// in case the hall-effect sensor bounces across the threshold.
+/// After an edge, wait this long for the hall-effect sensor to stop bouncing
+/// across its threshold, then act on where the line actually settled.
 const DEBOUNCE: Duration = Duration::from_millis(100);
+
+/// The lid-suspend action for a line level: the sensor pulls the line low
+/// when the lid is closed (a falling edge is a close).
+fn action_for_level(level: Value) -> &'static str {
+    match level {
+        Value::Inactive => "close",
+        Value::Active => "open",
+    }
+}
+
+/// Whether to run lid-suspend for a settled lid position. Skips a repeat of
+/// the action that ran last, so a bounce that ends where it started (or edges
+/// that queued up while lid-suspend was running) does nothing.
+fn should_run(last: Option<&'static str>, settled: &'static str) -> bool {
+    last != Some(settled)
+}
 
 fn run_lid_suspend(action: &str) {
     let home = match std::env::var("HOME") {
@@ -53,20 +69,60 @@ fn main() {
 
     eprintln!("argon-lid-monitor: watching {GPIO_CHIP} line {LID_LINE}");
 
+    // The last action handed to lid-suspend. None until the first edge, which
+    // therefore always runs.
+    let mut last_action: Option<&'static str> = None;
+
     loop {
         match req.read_edge_event() {
             Ok(event) => {
-                let action = match event.kind {
-                    EdgeKind::Falling => "close",
-                    EdgeKind::Rising => "open",
-                };
-                run_lid_suspend(action);
+                // Let the sensor settle, then throw away every edge that
+                // arrived meanwhile. The kernel queues them; without the drain
+                // a chattering close replayed as close/open/close, each one a
+                // full lid-suspend run.
                 std::thread::sleep(DEBOUNCE);
+                while matches!(req.has_edge_event(), Ok(true)) {
+                    if req.read_edge_event().is_err() {
+                        break;
+                    }
+                }
+                // Act on the level the line settled at, not on the edge that
+                // woke us: after a bounce the two can differ. Fall back to the
+                // edge if the level cannot be read.
+                let action = match req.value(LID_LINE) {
+                    Ok(level) => action_for_level(level),
+                    Err(_) => match event.kind {
+                        EdgeKind::Falling => "close",
+                        EdgeKind::Rising => "open",
+                    },
+                };
+                if should_run(last_action, action) {
+                    run_lid_suspend(action);
+                    last_action = Some(action);
+                }
             }
             Err(e) => {
                 eprintln!("argon-lid-monitor: edge read error: {e}");
                 std::thread::sleep(Duration::from_secs(1));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_maps_to_action() {
+        assert_eq!(action_for_level(Value::Inactive), "close");
+        assert_eq!(action_for_level(Value::Active), "open");
+    }
+
+    #[test]
+    fn a_repeat_of_the_last_action_is_skipped() {
+        assert!(should_run(None, "close"));
+        assert!(should_run(Some("open"), "close"));
+        assert!(!should_run(Some("close"), "close"));
     }
 }

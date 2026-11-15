@@ -13,10 +13,11 @@
 # so a new value is live within ~1s and can be compared by feel against the
 # previous one in the same typing session.
 #
-# Every write emits the whole file including BOTH keys, read back from whatever
-# is currently set. That matters because the dashboard slider only ever passes a
-# millisecond value — if this script wrote just that key, moving the slider
-# would silently reset gate_taps to its default.
+# Every write emits the whole file: both keys this script manages, read back
+# from whatever is currently set, plus any other `key=value` line already in
+# the file (trust_tool_palm, for one). That matters because the dashboard slider
+# only ever passes a millisecond value — if this script wrote just that key,
+# moving the slider would silently reset everything else to its default.
 #
 # The write goes through `sudo -n /usr/bin/tee` because the config is root
 # owned (the daemon is a system service) while every caller here is not.
@@ -66,6 +67,14 @@ write_config() {
 #   behavior; only useful for A/B testing.
 typing_gate_ms=${ms}
 gate_taps=${taps}"
+
+    # Carry over settings this script does not manage, verbatim.
+    local extra=""
+    if [ -r "$CONFIG" ]; then
+        extra=$(grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=' "$CONFIG" |
+            grep -Ev '^[[:space:]]*(typing_gate_ms|gate_taps)[[:space:]]*=' || true)
+    fi
+    [ -n "$extra" ] && body+=$'\n'"$extra"
 
     # Absolute paths and literal args: sudoers matches the command line as
     # written, so these two invocations are exactly what install.sh whitelists.

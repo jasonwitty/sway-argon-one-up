@@ -247,8 +247,17 @@ fi
 if [ "$INSTALL_WEBAPPS" = "y" ]; then
     info "Installing WebApps (webapp-manager)..."
     WEBAPPS_DEB="/tmp/webapp-manager.deb"
+    # The Mint mirror is plain HTTP (no HTTPS endpoint) and this file is
+    # installed as root, so pin its SHA-256 (as published in Mint's own package
+    # index). Update the hash together with the version in the URL.
+    WEBAPPS_SHA256="75f8c5d5edb0fc440880b801810b2a0231a772f901162e0c824c0bfa5727bcff"
     curl -fLo "$WEBAPPS_DEB" \
         "http://packages.linuxmint.com/pool/main/w/webapp-manager/webapp-manager_1.4.6_all.deb"
+    if ! echo "$WEBAPPS_SHA256  $WEBAPPS_DEB" | sha256sum -c --status; then
+        rm -f "$WEBAPPS_DEB"
+        error "webapp-manager download does not match its expected checksum — not installing it."
+        exit 1
+    fi
     sudo apt install -y "$WEBAPPS_DEB"
     rm -f "$WEBAPPS_DEB"
     success "WebApps installed"
@@ -443,6 +452,20 @@ git clone --depth=1 --branch "$REPO_BRANCH" "$REPO_URL" "$REPO_DIR"
 
 cd "$REPO_DIR"
 
+# Re-running the installer (to upgrade) overwrites these configs. Keep a copy
+# of whatever is there first so local edits are never lost without a trace.
+CONFIG_ITEMS=(sway waybar wob wofi foot mako swaylock gtk-3.0 sway-themes fish wireplumber starship.toml mimeapps.list)
+BACKUP_DIR="$HOME/.config/sway-argon-backup-$(date +%Y%m%d-%H%M%S)"
+for item in "${CONFIG_ITEMS[@]}"; do
+    if [ -e "$HOME/.config/$item" ]; then
+        mkdir -p "$BACKUP_DIR"
+        cp -a "$HOME/.config/$item" "$BACKUP_DIR/"
+    fi
+done
+if [ -d "$BACKUP_DIR" ]; then
+    info "Existing configs backed up to $BACKUP_DIR"
+fi
+
 info "Copying config files..."
 
 # Sway and desktop configs
@@ -451,8 +474,10 @@ cp -r sway waybar wob wofi foot mako swaylock gtk-3.0 sway-themes fish wireplumb
 cp starship.toml ~/.config/
 cp mimeapps.list ~/.config/
 
-# Wallpapers
-cp -r wallpapers ~/.wallpapers
+# Wallpapers. Copy the directory's contents: `cp -r wallpapers ~/.wallpapers`
+# nests them in ~/.wallpapers/wallpapers once the target exists (any re-run).
+mkdir -p ~/.wallpapers
+cp -r wallpapers/. ~/.wallpapers/
 
 # The Sakurazuki wallpaper has no licence in its upstream repo, so it is not
 # bundled here; fetch it from its author (pinned commit) instead. Without it the
@@ -533,55 +558,25 @@ success "Config files copied"
 # ---------------------------------------------------------------------------
 phase "Phase 9: Build Rust daemons"
 
-if [ -x /usr/local/bin/argon-battery-rs ]; then
-    success "argon-battery-rs already installed"
-else
-    info "Building argon-battery-rs (this may take a few minutes)..."
-    cd "$REPO_DIR/argon-battery-rs"
-    cargo build --release
-    sudo install -m 755 target/release/argon-battery-rs /usr/local/bin/argon-battery-rs
-    success "argon-battery-rs built and installed"
-fi
+# Always build and install, even when a binary is already there: a re-run of
+# the installer is the upgrade path, and it replaces the configs and scripts
+# above, so skipping the binaries would leave new scripts driving old daemons.
+build_and_install() {
+    local crate="$1"
+    info "Building $crate (this may take a few minutes)..."
+    (cd "$REPO_DIR/$crate" && cargo build --release)
+    sudo install -m 0755 "$REPO_DIR/$crate/target/release/$crate" "/usr/local/bin/$crate"
+    success "$crate built and installed"
+}
 
-if [ -x /usr/local/bin/argon-lid-monitor ]; then
-    success "argon-lid-monitor already installed"
-else
-    info "Building argon-lid-monitor..."
-    cd "$REPO_DIR/argon-lid-monitor"
-    cargo build --release
-    sudo install -m 755 target/release/argon-lid-monitor /usr/local/bin/argon-lid-monitor
-    success "argon-lid-monitor built and installed"
-fi
+for crate in argon-battery-rs argon-lid-monitor trackpad-guard argon-fan power-button-guard; do
+    build_and_install "$crate"
+done
 
-if [ -x /usr/local/bin/trackpad-guard ]; then
-    success "trackpad-guard already installed"
-else
-    info "Building trackpad-guard..."
-    cd "$REPO_DIR/trackpad-guard"
-    cargo build --release
-    sudo install -m 755 target/release/trackpad-guard /usr/local/bin/trackpad-guard
-    success "trackpad-guard built and installed"
-fi
-
-if [ -x /usr/local/bin/argon-fan ]; then
-    success "argon-fan already installed"
-else
-    info "Building argon-fan (this may take a few minutes)..."
-    cd "$REPO_DIR/argon-fan"
-    cargo build --release
-    sudo install -m 0755 target/release/argon-fan /usr/local/bin/argon-fan
-    success "argon-fan built and installed"
-fi
-
-if [ -x /usr/local/bin/power-button-guard ]; then
-    success "power-button-guard already installed"
-else
-    info "Building power-button-guard..."
-    cd "$REPO_DIR/power-button-guard"
-    cargo build --release
-    sudo install -m 0755 target/release/power-button-guard /usr/local/bin/power-button-guard
-    success "power-button-guard built and installed"
-fi
+# Root helper that sets the CPU governor (used by power-mode, lid-suspend and
+# argon-battery-rs through sudo). Must be root-owned and outside $HOME: it is
+# what the sudoers rule in Phase 10 allows.
+sudo install -o root -g root -m 0755 "$REPO_DIR/sbin/set-cpu-governor" /usr/local/sbin/set-cpu-governor
 
 # Upgrade path: remove the old Python trackpad-guard and its exec line from sway.
 if [ -f "$HOME/.local/bin/trackpad-guard" ] && head -1 "$HOME/.local/bin/trackpad-guard" | grep -q python; then
@@ -602,6 +597,8 @@ mkdir -p "$HOME/.config/systemd/user"
 cp "$REPO_DIR/argon-lid-monitor/systemd/argon-lid-monitor.service" "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 systemctl --user enable argon-lid-monitor.service
+# On an upgrade the old binary is still running; pick up the new one.
+systemctl --user try-restart argon-lid-monitor.service 2>/dev/null || true
 # Only start if sway session is up; otherwise it will start at next login
 if systemctl --user is-active --quiet graphical-session.target 2>/dev/null; then
     systemctl --user start argon-lid-monitor.service
@@ -739,31 +736,28 @@ info "Installing webkit2gtk runtime..."
 sudo apt install -y libwebkit2gtk-4.1-0 libayatana-appindicator3-1
 success "Webkit runtime installed"
 
-if [ -x /usr/local/bin/system-dashboard ]; then
-    success "system-dashboard already installed"
-else
-    info "Downloading prebuilt system-dashboard for aarch64..."
-    # SD_TAG can be set in the environment to install a specific release
-    # (e.g. a release-candidate build); otherwise take the newest one.
-    SD_TAG="${SD_TAG:-}"
-    [ -n "$SD_TAG" ] || SD_TAG=$(curl -fsSL "https://api.github.com/repos/jasonwitty/sway-argon-one-up/releases" 2>/dev/null \
-        | jq -r '[.[] | select(.tag_name | startswith("rc-system-dashboard-v"))][0].tag_name // empty')  # RC-ONLY: revert the prefix to "system-dashboard-v" before merging to main
-    if [ -z "$SD_TAG" ]; then
-        error "Could not find a published system-dashboard release on GitHub."
-        error "Check https://github.com/jasonwitty/sway-argon-one-up/releases or tag a release."
-        exit 1
-    fi
-    info "Found release: $SD_TAG"
-    if ! curl -fsSL -o /tmp/system-dashboard \
-        "https://github.com/jasonwitty/sway-argon-one-up/releases/download/${SD_TAG}/system-dashboard-aarch64"; then
-        error "Failed to download system-dashboard binary from GitHub Releases."
-        error "Check internet connectivity and try again."
-        exit 1
-    fi
-    sudo install -m 0755 /tmp/system-dashboard /usr/local/bin/system-dashboard
-    rm -f /tmp/system-dashboard
-    success "system-dashboard installed"
+# Always fetch, so a re-run of the installer upgrades the dashboard too.
+info "Downloading prebuilt system-dashboard for aarch64..."
+# SD_TAG can be set in the environment to install a specific release
+# (e.g. a release-candidate build); otherwise take the newest one.
+SD_TAG="${SD_TAG:-}"
+[ -n "$SD_TAG" ] || SD_TAG=$(curl -fsSL "https://api.github.com/repos/jasonwitty/sway-argon-one-up/releases" 2>/dev/null \
+    | jq -r '[.[] | select(.tag_name | startswith("rc-system-dashboard-v"))][0].tag_name // empty' || true)  # `|| true`: a failed lookup must reach the error below, not trip `set -e`. RC-ONLY: revert the prefix to "system-dashboard-v" before merging to main
+if [ -z "$SD_TAG" ]; then
+    error "Could not find a published system-dashboard release on GitHub."
+    error "Check https://github.com/jasonwitty/sway-argon-one-up/releases or tag a release."
+    exit 1
 fi
+info "Found release: $SD_TAG"
+if ! curl -fsSL -o /tmp/system-dashboard \
+    "https://github.com/jasonwitty/sway-argon-one-up/releases/download/${SD_TAG}/system-dashboard-aarch64"; then
+    error "Failed to download system-dashboard binary from GitHub Releases."
+    error "Check internet connectivity and try again."
+    exit 1
+fi
+sudo install -m 0755 /tmp/system-dashboard /usr/local/bin/system-dashboard
+rm -f /tmp/system-dashboard
+success "system-dashboard installed"
 
 # .desktop file so any DE / launcher can list and start it
 info "Installing system-dashboard .desktop entry..."
@@ -778,13 +772,14 @@ success ".desktop entry installed"
 phase "Phase 9c: Network, Bluetooth and calendar panels"
 
 # Qt runtime the panels need, plus the tools the network helper scripts call:
-# iw (link details, band), ping (latency) and qrencode (Wi-Fi share card).
+# iw (link details, band), ping (latency), qrencode (Wi-Fi share card) and
+# uuidgen (profile ids for WPA-Enterprise networks).
 info "Installing panel runtime..."
 sudo apt install -y \
     libqt6svg6 qt6-wayland libjemalloc2 \
     qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
     qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript \
-    iw iputils-ping qrencode
+    iw iputils-ping qrencode uuid-runtime
 success "Panel runtime installed"
 
 mkdir -p "$HOME/.config/quickshell"
@@ -809,7 +804,7 @@ if [ -x /usr/local/bin/quickshell ] && quickshell_works /usr/local/bin/quickshel
     success "quickshell already installed"
 else
     QS_TAG=$(curl -fsSL "https://api.github.com/repos/jasonwitty/sway-argon-one-up/releases" 2>/dev/null \
-        | jq -r '[.[] | select(.tag_name | startswith("quickshell-v"))][0].tag_name // empty')
+        | jq -r '[.[] | select(.tag_name | startswith("quickshell-v"))][0].tag_name // empty' || true)  # `|| true`: on a failed lookup fall through to the source build
     if [ -n "$QS_TAG" ] && curl -fsSL -o /tmp/quickshell \
         "https://github.com/jasonwitty/sway-argon-one-up/releases/download/${QS_TAG}/quickshell-aarch64" \
         && chmod +x /tmp/quickshell && quickshell_works /tmp/quickshell; then
@@ -856,20 +851,25 @@ info "Creating user directories..."
 xdg-user-dirs-update
 success "User directories created"
 
-# Sudoers for lid-suspend, CPU governor, USB bind/unbind
+# Sudoers for lid-suspend, CPU governor, USB bind/unbind, trackpad-guard.
+# Every rule names an exact command line. Do not add one with a wildcard in
+# its arguments: sudoers lets `*` match spaces and slashes, so a rule such as
+# `tee /sys/.../cpu*/...` allows writing any file as root.
 info "Configuring sudoers for power management..."
 sudo tee /etc/sudoers.d/lid-power > /dev/null <<SUDOEOF
 $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block wifi
 $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock wifi
 $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block bluetooth
 $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
-$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+$USER ALL=(root) NOPASSWD: /usr/local/sbin/set-cpu-governor
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
 $USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable --now trackpad-guard.service
 $USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable --now trackpad-guard.service
 $USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl kill -s SIGUSR1 trackpad-guard.service
 $USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl kill -s SIGUSR2 trackpad-guard.service
+$USER ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /etc/trackpad-guard
+$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/trackpad-guard/config
 SUDOEOF
 sudo visudo -cf /etc/sudoers.d/lid-power
 success "Power management sudoers configured"
@@ -880,8 +880,6 @@ if [ "$INSTALL_BRAVE" = "y" ] || [ "$INSTALL_CHROMIUM" = "y" ]; then
     sudo mkdir -p /etc/brave/policies/managed /etc/chromium/policies/managed
     sudo tee /etc/sudoers.d/browser-theme > /dev/null <<SUDOEOF
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/brave/policies/managed/color.json
-$USER ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /etc/trackpad-guard
-$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/trackpad-guard/config
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/chromium/policies/managed/color.json
 SUDOEOF
     sudo visudo -cf /etc/sudoers.d/browser-theme
@@ -911,7 +909,9 @@ TimeoutStopSec=5
 WantedBy=multi-user.target
 EOF
 sudo systemctl daemon-reload
-sudo systemctl enable --now argon-fan
+sudo systemctl enable argon-fan
+# restart, not `enable --now`: on an upgrade the old binary is still running.
+sudo systemctl restart argon-fan
 success "argon-fan service installed and started"
 
 # Prevent logind from handling lid switch (Pi5 has no suspend support)
@@ -936,6 +936,7 @@ cp "$REPO_DIR/power-button-guard/systemd/power-button-guard.service" \
     "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload 2>/dev/null || true
 systemctl --user enable power-button-guard.service 2>/dev/null || true
+systemctl --user try-restart power-button-guard.service 2>/dev/null || true
 success "Power button confirm prompt installed"
 
 # Set fish as default shell
@@ -980,10 +981,18 @@ fi
 # ---------------------------------------------------------------------------
 phase "Phase 12: Set default theme"
 
-info "Applying default theme (Catppuccin Frappe)..."
-echo "frappe" > "$HOME/.config/sway-themes/current"
-"$HOME/.local/bin/switch-theme" frappe &>/dev/null || true
-success "Default theme applied"
+# Keep the theme already in use on a re-run; Catppuccin Frappe on a new install.
+THEME="frappe"
+if [ -f "$HOME/.config/sway-themes/current" ]; then
+    SAVED_THEME=$(cat "$HOME/.config/sway-themes/current")
+    if [ -n "$SAVED_THEME" ] && [ -f "$HOME/.config/sway-themes/$SAVED_THEME" ]; then
+        THEME="$SAVED_THEME"
+    fi
+fi
+info "Applying theme ($THEME)..."
+echo "$THEME" > "$HOME/.config/sway-themes/current"
+"$HOME/.local/bin/switch-theme" "$THEME" &>/dev/null || true
+success "Theme applied"
 
 # ---------------------------------------------------------------------------
 # Phase 13: Cleanup and finish

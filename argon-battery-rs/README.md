@@ -38,11 +38,12 @@ sudo usermod -aG i2c "$USER"
 # Log out and back in for group change to take effect
 ```
 
-- For CPU governor switching, a sudoers entry is required so the binary can use `sudo tee` to write the governor sysfs files. If you followed the main [sway-argon-one-up setup](../README.md#12-set-up-lid-close-power-management), the `lid-power` sudoers file already includes this rule. Otherwise, add it:
+- For CPU governor switching, the binary runs `sudo -n /usr/local/sbin/set-cpu-governor <governor>`, a small root helper from this repo ([`sbin/set-cpu-governor`](../sbin/set-cpu-governor)) that checks the name against the kernel's list before writing it. It needs to be installed root-owned, with a sudoers entry allowing it. (Do not use a `tee .../cpu*/...` sudoers rule for this: the wildcard also matches spaces, which lets `tee` write any file as root.) If you followed the main [sway-argon-one-up setup](../README.md#12-set-up-lid-close-power-management), the `lid-power` sudoers file already includes this rule. Otherwise, add it:
 
 ```bash
+sudo install -o root -g root -m 0755 sbin/set-cpu-governor /usr/local/sbin/set-cpu-governor
 sudo tee /etc/sudoers.d/cpu-governor > /dev/null <<EOF
-$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+$USER ALL=(root) NOPASSWD: /usr/local/sbin/set-cpu-governor
 EOF
 ```
 

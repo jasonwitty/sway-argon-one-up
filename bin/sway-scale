@@ -34,7 +34,8 @@ case "${1:-get}" in
                 echo "${s}x"
             fi
         done | wofi --dmenu --prompt "Scale" --width 250 --height 250 | sed 's/x.*//')
-        [ -n "$choice" ] && set_scale "$choice"
+        # The waybar scale module re-runs `get` on this signal ("signal": 10).
+        [ -n "$choice" ] && set_scale "$choice" && pkill -RTMIN+10 -x waybar 2>/dev/null
         ;;
     get)
         echo "${cur}x"

@@ -15,7 +15,7 @@ use std::process::{exit, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::sleep;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 type AnyResult<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -24,6 +24,18 @@ const TEMP_PATH: &str = "/sys/class/thermal/thermal_zone0/temp";
 const HWMON_DIR: &str = "/sys/class/hwmon";
 const PWMFAN_NAME: &str = "pwmfan";
 const CONFIG_PATH: &str = "/etc/argon-fan/config.json";
+
+/// What the fan gets whenever we cannot work out the right speed: a config
+/// that slipped past validation, a failed temperature read. Every such path
+/// fails towards "too loud", never towards "off while hot".
+const FAILSAFE_PWM: u32 = 255;
+const MAX_PWM: u32 = 255;
+/// Upper bound on the poll interval, so a typo there cannot leave the fan
+/// unattended for minutes and the state file's age stays meaningful.
+const MAX_POLL_SEC: u64 = 30;
+/// A state file older than this means the daemon is gone (it rewrites the
+/// file every poll, at most MAX_POLL_SEC apart).
+const STATE_STALE_SEC: u64 = 90;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct CurvePoint {
@@ -96,20 +108,62 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Reject configs that parse but cannot drive a fan: an active mode that
+    /// does not exist, an empty or unsorted curve, a PWM above 255. Used on
+    /// every load, so neither `edit-config` nor a hand edit can install one.
+    fn validate(&self) -> Result<(), String> {
+        if !self.modes.contains_key(&self.active_mode) {
+            let known: Vec<&String> = self.modes.keys().collect();
+            return Err(format!(
+                "active_mode '{}' is not one of the defined modes {known:?}",
+                self.active_mode
+            ));
+        }
+        for (name, mode) in &self.modes {
+            if mode.curve.is_empty() {
+                return Err(format!("mode '{name}' has an empty curve"));
+            }
+            for p in &mode.curve {
+                if !p.temp_c.is_finite() {
+                    return Err(format!("mode '{name}' has a non-numeric temp_c"));
+                }
+                if p.pwm > MAX_PWM {
+                    return Err(format!(
+                        "mode '{name}' has pwm {} (the maximum is {MAX_PWM})",
+                        p.pwm
+                    ));
+                }
+            }
+            if mode.curve.windows(2).any(|w| w[1].temp_c < w[0].temp_c) {
+                return Err(format!(
+                    "mode '{name}' curve must be sorted by rising temp_c"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn poll_interval(&self) -> Duration {
+        Duration::from_secs(self.poll_interval_sec.clamp(1, MAX_POLL_SEC))
+    }
+
     fn pwm_for(&self, temp_c: f32) -> u32 {
+        // validate() rules out the FAILSAFE_PWM branches for any config that
+        // was loaded from disk; they are here so a bug elsewhere still cannot
+        // turn into "fan off".
         let curve = match self.modes.get(&self.active_mode) {
             Some(m) => &m.curve,
-            None => return 0,
+            None => return FAILSAFE_PWM,
         };
         if curve.is_empty() {
-            return 0;
+            return FAILSAFE_PWM;
         }
         if temp_c <= curve[0].temp_c {
-            return curve[0].pwm;
+            return curve[0].pwm.min(MAX_PWM);
         }
         let last = curve.last().unwrap();
         if temp_c >= last.temp_c {
-            return last.pwm;
+            return last.pwm.min(MAX_PWM);
         }
         for w in curve.windows(2) {
             let (a, b) = (&w[0], &w[1]);
@@ -123,7 +177,7 @@ impl Config {
                 return lerp.round().clamp(0.0, 255.0) as u32;
             }
         }
-        0
+        FAILSAFE_PWM
     }
 }
 
@@ -178,6 +232,7 @@ fn load_or_seed_config() -> AnyResult<Config> {
     if p.exists() {
         let body = fs::read_to_string(&p)?;
         let cfg: Config = serde_json::from_str(&body)?;
+        cfg.validate()?;
         return Ok(cfg);
     }
     let cfg = Config::default();
@@ -238,7 +293,12 @@ fn now_secs() -> u64 {
 }
 
 fn cmd_daemon() -> AnyResult<()> {
-    let mut cfg = load_or_seed_config()?;
+    // A broken config must not stop the daemon from starting: run the
+    // built-in curves until the file is fixed (the reload below picks it up).
+    let mut cfg = load_or_seed_config().unwrap_or_else(|e| {
+        eprintln!("argon-fan: config unusable ({e}); using built-in defaults");
+        Config::default()
+    });
     let cfg_path = config_path();
     // Track mtime so we reload after a `set` or `edit-config` from the user CLI.
     // We can't rely on signals — non-root callers can't signal the root daemon.
@@ -253,36 +313,84 @@ fn cmd_daemon() -> AnyResult<()> {
     flag::register(SIGTERM, Arc::clone(&term))?;
     flag::register(SIGINT, Arc::clone(&term))?;
 
+    let mut last_temp = 0.0_f32;
+    // Log a sensor/PWM fault when it starts and when it clears, not every poll.
+    let mut temp_failing = false;
+    let mut pwm_failing = false;
+
     while !term.load(Ordering::Relaxed) {
         let cur_mtime = fs::metadata(&cfg_path).and_then(|m| m.modified()).ok();
         if cur_mtime != last_mtime {
+            // Remember the mtime either way, so a bad edit is reported once
+            // rather than every poll; the previous config stays in force.
+            last_mtime = cur_mtime;
             match load_or_seed_config() {
                 Ok(c) => {
                     cfg = c;
-                    last_mtime = cur_mtime;
                     eprintln!(
                         "argon-fan: config reloaded; active_mode={}",
                         cfg.active_mode
                     );
                 }
-                Err(e) => eprintln!("argon-fan: config reload failed: {e}"),
+                Err(e) => {
+                    eprintln!("argon-fan: config reload failed, keeping the previous one: {e}")
+                }
             }
         }
-        let temp = read_temp()?;
-        let pwm = cfg.pwm_for(temp);
-        write_pwm(&hwmon, pwm)?;
+
+        // Neither fault may end the loop: exiting here would leave the fan at
+        // whatever PWM was written last, which can be 0.
+        let pwm = match read_temp() {
+            Ok(t) => {
+                if temp_failing {
+                    eprintln!("argon-fan: temperature readable again");
+                    temp_failing = false;
+                }
+                last_temp = t;
+                cfg.pwm_for(t)
+            }
+            Err(e) => {
+                if !temp_failing {
+                    eprintln!("argon-fan: temperature read failed ({e}); fan to full");
+                    temp_failing = true;
+                }
+                FAILSAFE_PWM
+            }
+        };
+        match write_pwm(&hwmon, pwm) {
+            Ok(()) => {
+                if pwm_failing {
+                    eprintln!("argon-fan: pwm writable again");
+                    pwm_failing = false;
+                }
+            }
+            Err(e) => {
+                if !pwm_failing {
+                    eprintln!("argon-fan: pwm write failed: {e}");
+                    pwm_failing = true;
+                }
+            }
+        }
         let _ = write_state(&State {
             active_mode: cfg.active_mode.clone(),
             pwm,
             pwm_pct: ((pwm as u64 * 100) / 255) as u32,
-            temp_c: temp,
+            temp_c: last_temp,
             timestamp: now_secs(),
         });
-        sleep(Duration::from_secs(cfg.poll_interval_sec.max(1)));
+
+        // Sleep in short slices so SIGTERM is honoured promptly and the
+        // hand-back below runs before systemd's stop timeout.
+        let wake = Instant::now() + cfg.poll_interval();
+        while Instant::now() < wake && !term.load(Ordering::Relaxed) {
+            sleep(Duration::from_millis(200));
+        }
     }
 
-    // Hand the fan back to the kernel governor on clean shutdown.
+    // Hand the fan back to the kernel governor on clean shutdown, and drop the
+    // state file so waybar and the dashboard show "not running".
     let _ = set_pwm_enable(&hwmon, 2);
+    let _ = fs::remove_file(STATE_FILE);
     eprintln!("argon-fan: daemon exiting; pwm1_enable restored to 2");
     Ok(())
 }
@@ -382,10 +490,13 @@ fn cmd_edit_config() -> AnyResult<()> {
         eprintln!("argon-fan: config unchanged");
         return Ok(());
     }
-    if let Err(e) = serde_json::from_str::<Config>(&new_body) {
+    let checked = serde_json::from_str::<Config>(&new_body)
+        .map_err(|e| e.to_string())
+        .and_then(|c| c.validate());
+    if let Err(e) = checked {
         let _ = fs::remove_file(&scratch);
         let msg = format!("invalid config (not saved): {e}");
-        notify("argon-fan: config not saved", &e.to_string());
+        notify("argon-fan: config not saved", &e);
         return Err(msg.into());
     }
 
@@ -416,20 +527,27 @@ fn mode_label(mode: &str) -> String {
     }
 }
 
+/// The daemon's last state, or None when there is none or it is too old to
+/// be from a live daemon (a crashed or killed one leaves its file behind).
+fn live_state() -> Option<State> {
+    let body = fs::read_to_string(STATE_FILE).ok()?;
+    let state: State = serde_json::from_str(&body).ok()?;
+    if now_secs().saturating_sub(state.timestamp) > STATE_STALE_SEC {
+        return None;
+    }
+    Some(state)
+}
+
 fn cmd_waybar() -> AnyResult<()> {
-    let body = match fs::read_to_string(STATE_FILE) {
-        Ok(b) => b,
-        Err(_) => {
-            let out = serde_json::json!({
-                "text": format!("{} ?", "\u{F020E}"),
-                "tooltip": "argon-fan daemon not running",
-                "class": "offline",
-            });
-            println!("{out}");
-            return Ok(());
-        }
+    let Some(state) = live_state() else {
+        let out = serde_json::json!({
+            "text": format!("{} ?", "\u{F020E}"),
+            "tooltip": "argon-fan daemon not running",
+            "class": "offline",
+        });
+        println!("{out}");
+        return Ok(());
     };
-    let state: State = serde_json::from_str(&body)?;
     let icon = mode_icon(&state.active_mode);
     let out = serde_json::json!({
         "text": format!("{icon} {:.0}°C", state.temp_c),
@@ -560,18 +678,66 @@ mod tests {
     }
 
     #[test]
-    fn pwm_for_unknown_active_mode_returns_zero() {
+    fn pwm_for_unknown_active_mode_fails_to_full_speed() {
         let c = Config {
             active_mode: "bogus".into(),
             ..Config::default()
         };
-        assert_eq!(c.pwm_for(60.0), 0);
+        assert_eq!(c.pwm_for(60.0), FAILSAFE_PWM);
     }
 
     #[test]
-    fn pwm_for_empty_curve_returns_zero() {
+    fn pwm_for_empty_curve_fails_to_full_speed() {
         let c = cfg_with("m", vec![]);
-        assert_eq!(c.pwm_for(60.0), 0);
+        assert_eq!(c.pwm_for(60.0), FAILSAFE_PWM);
+    }
+
+    #[test]
+    fn pwm_for_unreadable_temperature_fails_to_full_speed() {
+        // NaN compares false against everything, so it falls through the curve.
+        let c = Config::default();
+        assert_eq!(c.pwm_for(f32::NAN), FAILSAFE_PWM);
+    }
+
+    #[test]
+    fn pwm_for_clamps_out_of_range_endpoints() {
+        let pt = |temp_c: f32, pwm: u32| CurvePoint { temp_c, pwm };
+        let c = cfg_with("m", vec![pt(40.0, 300), pt(60.0, 900)]);
+        assert_eq!(c.pwm_for(20.0), 255);
+        assert_eq!(c.pwm_for(80.0), 255);
+    }
+
+    #[test]
+    fn validate_accepts_the_defaults() {
+        assert!(Config::default().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_configs_that_cannot_drive_the_fan() {
+        let pt = |temp_c: f32, pwm: u32| CurvePoint { temp_c, pwm };
+        let unknown = Config {
+            active_mode: "bogus".into(),
+            ..Config::default()
+        };
+        assert!(unknown.validate().is_err());
+        assert!(cfg_with("m", vec![]).validate().is_err());
+        assert!(cfg_with("m", vec![pt(50.0, 300)]).validate().is_err());
+        assert!(cfg_with("m", vec![pt(70.0, 10), pt(50.0, 20)])
+            .validate()
+            .is_err());
+    }
+
+    #[test]
+    fn poll_interval_is_bounded() {
+        let with = |poll_interval_sec: u64| Config {
+            poll_interval_sec,
+            ..Config::default()
+        };
+        assert_eq!(with(0).poll_interval(), Duration::from_secs(1));
+        assert_eq!(
+            with(3600).poll_interval(),
+            Duration::from_secs(MAX_POLL_SEC)
+        );
     }
 
     #[test]

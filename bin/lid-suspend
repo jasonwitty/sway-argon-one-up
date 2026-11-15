@@ -24,6 +24,14 @@ find_webcam() {
 
 log() { echo "  $1" >> "$LOG"; }
 
+# Radios that were on when the lid closed (tmpfs: a reboot clears it).
+RADIO_STATE="$XDG_RUNTIME_DIR/lid-suspend.radios"
+
+# True when at least one device of this rfkill type is not soft-blocked.
+radio_on() {
+    rfkill list "$1" 2>/dev/null | grep -q 'Soft blocked: no'
+}
+
 case "$1" in
     close)
         echo "=== LID CLOSE $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$LOG"
@@ -33,9 +41,19 @@ case "$1" in
         swaymsg "output * power off"
         log "display: off"
 
-        echo powersave | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
+        sudo -n /usr/local/sbin/set-cpu-governor powersave
         log "cpu governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
 
+        # Remember which radios were on, so `open` restores exactly that and
+        # does not switch on a radio the user had turned off (the Bluetooth
+        # panel keeps "off" as an rfkill block). Not rewritten if it already
+        # exists: a second close without an open would otherwise record the
+        # radios as off, because the first close blocked them.
+        if [ ! -e "$RADIO_STATE" ]; then
+            : > "$RADIO_STATE"
+            radio_on wifi && echo wifi >> "$RADIO_STATE"
+            radio_on bluetooth && echo bluetooth >> "$RADIO_STATE"
+        fi
         sudo rfkill block wifi
         sudo rfkill block bluetooth
         log "wifi: $(rfkill list wifi | grep -o 'Soft blocked: .*')"
@@ -88,11 +106,19 @@ case "$1" in
                 fi
                 ;;
         esac
-        echo "$governor" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
+        sudo -n /usr/local/sbin/set-cpu-governor "$governor"
         log "cpu governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor) (battery_class=${battery_class:-?} ac_reg=${current_high:-n/a})"
 
-        sudo rfkill unblock wifi
-        sudo rfkill unblock bluetooth
+        # Unblock only what `close` blocked. With no record (an open that was
+        # not preceded by a close from this version) fall back to both.
+        if [ -e "$RADIO_STATE" ]; then
+            grep -qx wifi "$RADIO_STATE" && sudo rfkill unblock wifi
+            grep -qx bluetooth "$RADIO_STATE" && sudo rfkill unblock bluetooth
+            rm -f "$RADIO_STATE"
+        else
+            sudo rfkill unblock wifi
+            sudo rfkill unblock bluetooth
+        fi
         log "wifi: $(rfkill list wifi | grep -o 'Soft blocked: .*')"
         log "bluetooth: $(rfkill list bluetooth | grep -o 'Soft blocked: .*')"
 

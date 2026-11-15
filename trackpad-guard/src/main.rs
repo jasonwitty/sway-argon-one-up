@@ -734,6 +734,14 @@ fn batch_changes_contact(batch: &[InputEvent]) -> bool {
                 || code == KeyCode::BTN_TOOL_TRIPLETAP
                 || code == KeyCode::BTN_TOOL_QUADTAP
                 || code == KeyCode::BTN_TOOL_QUINTTAP
+                // The clickpad's physical button. It is a press/release pair
+                // like a contact, so it has the same failure when half of it
+                // is dropped: a release landing inside the gate (Shift-click,
+                // or letting go of a drag just after a keystroke) left
+                // libinput holding the button until the next full click.
+                || code == KeyCode::BTN_LEFT
+                || code == KeyCode::BTN_RIGHT
+                || code == KeyCode::BTN_MIDDLE
         }
         EventSummary::AbsoluteAxis(_, code, _value) => code == AbsoluteAxisCode::ABS_MT_TRACKING_ID,
         _ => false,
@@ -1446,10 +1454,21 @@ fn version_string() -> String {
 }
 
 fn main() {
+    // run() returns rather than calling exit() itself so the virtual device
+    // and the grabs are dropped normally before the process ends.
+    let code = run();
+    std::process::exit(code);
+}
+
+/// Returns the process exit status. Non-zero for anything other than a
+/// requested shutdown, so systemd's Restart=on-failure brings the daemon back:
+/// losing the keyboard used to exit 0 and leave the guard off until reboot.
+fn run() -> i32 {
+    let mut exit_code = 0;
     if let Some(arg) = std::env::args().nth(1) {
         if arg == "--version" || arg == "-V" {
             println!("trackpad-guard {}", version_string());
-            return;
+            return 0;
         }
     }
     // First line in the journal for every run, before discovery can block on
@@ -1901,7 +1920,10 @@ fn main() {
         let msg = match rx.recv_timeout(wait) {
             Ok(m) => m,
             Err(mpsc::RecvTimeoutError::Timeout) => continue 'main,
-            Err(mpsc::RecvTimeoutError::Disconnected) => break 'main,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                exit_code = 1;
+                break 'main;
+            }
         };
         match msg {
             Msg::KeyActivity { at } => {
@@ -2239,6 +2261,7 @@ fn main() {
                 keyboards_alive = keyboards_alive.saturating_sub(1);
                 if keyboards_alive == 0 {
                     eprintln!("trackpad-guard: all keyboards disconnected, exiting");
+                    exit_code = 1;
                     break 'main;
                 }
             }
@@ -2305,6 +2328,7 @@ fn main() {
         taps_suppressed,
         palm_rewrites
     );
+    exit_code
 }
 
 #[cfg(test)]
@@ -2543,6 +2567,20 @@ mod tests {
         ];
         assert_eq!(batch_landing_lift(&batch), (false, false));
         assert!(!batch_changes_contact(&batch));
+    }
+
+    /// A physical click's press or release must get through the typing gate
+    /// even though the finger count does not change: dropping the release
+    /// leaves libinput holding the button.
+    #[test]
+    fn a_button_press_or_release_is_never_dropped_as_motion() {
+        for value in [1, 0] {
+            let batch = [
+                key(KeyCode::BTN_LEFT, value),
+                abs(AbsoluteAxisCode::ABS_MT_POSITION_X, 600),
+            ];
+            assert!(batch_changes_contact(&batch));
+        }
     }
 
     // --- quarantine repositioning ---

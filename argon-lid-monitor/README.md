@@ -13,14 +13,14 @@ The Argon ONE UP's lid hall-effect sensor isn't exposed through standard Linux A
 | Runtime | Part of `argononeupd.py` | Standalone binary |
 | Dependency | Whole Argon daemon + Python | `gpiocdev` crate only |
 | Startup | Pulls in I2C/battery/etc. | Single GPIO request, one syscall loop |
-| Debounce | None | 100ms after each edge |
+| Debounce | None | 100ms settle, then acts on the line's actual level |
 | Licensing | Argon's (unlicensed) | Apache-2.0 |
 
 ## What it does
 
 - Opens `/dev/gpiochip0` line 27 as an input with pull-up bias and both-edge detection.
 - Blocks on edge events. On `Falling` (lid closing, magnet approaches sensor) runs `$HOME/.local/bin/lid-suspend close`; on `Rising` (lid opening) runs `$HOME/.local/bin/lid-suspend open`.
-- Sleeps 100ms after each event as debounce in case the hall-effect sensor chatters near the threshold.
+- Debounces a chattering hall-effect sensor: after an edge it waits 100ms, discards the edges that queued up meanwhile, reads where the line settled, and runs `lid-suspend` only if that differs from the last action it ran.
 - Logs to stderr — read via `journalctl --user -u argon-lid-monitor`.
 
 The binary doesn't implement any power-saving logic itself — all of that lives in your `lid-suspend` script. That separation lets you change close/open behavior (screen off, rfkill, USB unbind, etc.) without recompiling.

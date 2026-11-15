@@ -1,0 +1,35 @@
+#!/bin/bash
+# set-cpu-governor — set the cpufreq governor on every core.
+#
+# Installed root-owned as /usr/local/sbin/set-cpu-governor and run through
+# sudo by power-mode, lid-suspend and argon-battery-rs.
+#
+# Why a helper instead of a sudoers rule for `tee`: the old rule was
+#   NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+# and sudoers matches the arguments as one string in which `*` also matches
+# spaces and slashes. That rule therefore allowed
+#   sudo tee /sys/devices/system/cpu/cpu0 /etc/sudoers.d/x /tmp/cpufreq/scaling_governor
+# i.e. writing any file as root, without a password. Here the only thing the
+# caller controls is a governor name, and it is checked against what the kernel
+# offers before anything is written.
+
+set -u
+
+gov="${1:-}"
+if [ "$#" -ne 1 ] || [[ ! $gov =~ ^[a-z_]+$ ]]; then
+    echo "usage: set-cpu-governor <governor>" >&2
+    exit 2
+fi
+
+available=/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors
+if ! grep -qw -- "$gov" "$available" 2>/dev/null; then
+    echo "set-cpu-governor: '$gov' is not an available governor" >&2
+    exit 2
+fi
+
+rc=0
+for f in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
+    [ -e "$f" ] || continue
+    echo "$gov" > "$f" || rc=1
+done
+exit "$rc"

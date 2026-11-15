@@ -40,6 +40,8 @@ The Argon daemon's `argonpowerbutton.py` checks this value and calls `lid-suspen
 ```bash
 cp bin/lid-suspend ~/.local/bin/
 chmod +x ~/.local/bin/lid-suspend
+# Root-owned helper lid-suspend uses to switch the CPU governor
+sudo install -o root -g root -m 0755 sbin/set-cpu-governor /usr/local/sbin/set-cpu-governor
 ```
 
 **3. Add passwordless sudo** for the power management operations:
@@ -50,7 +52,7 @@ $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block wifi
 $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock wifi
 $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill block bluetooth
 $USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock bluetooth
-$USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+$USER ALL=(root) NOPASSWD: /usr/local/sbin/set-cpu-governor
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/unbind
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/bus/usb/drivers/usb/bind
 EOF

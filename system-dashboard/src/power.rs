@@ -10,7 +10,8 @@ const GOVERNOR_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_govern
 #[derive(Serialize, Clone, Debug)]
 pub struct PowerState {
     pub governor: String,
-    pub on_ac: bool,
+    /// None when the gauge could not be read, so AC presence is unknown.
+    pub on_ac: Option<bool>,
 }
 
 pub fn read(battery: &crate::battery::BatteryState) -> PowerState {
@@ -23,6 +24,6 @@ pub fn read(battery: &crate::battery::BatteryState) -> PowerState {
     // detect AC. Reusing the BatteryState saves an extra I2C read.
     PowerState {
         governor,
-        on_ac: battery.charging,
+        on_ac: battery.available.then_some(battery.charging),
     }
 }

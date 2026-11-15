@@ -7,10 +7,8 @@ get_governor() {
 }
 
 set_governor() {
-    local gov="$1"
-    for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
-        echo "$gov" | sudo tee "$cpu" >/dev/null
-    done
+    # Root helper installed by install.sh; it validates the governor name.
+    sudo -n /usr/local/sbin/set-cpu-governor "$1"
 }
 
 case "${1:-toggle}" in

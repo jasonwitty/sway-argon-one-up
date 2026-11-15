@@ -63,6 +63,9 @@ apply_theme() {
     fi
     touch "$LOCK_FILE"
     trap 'rm -f "$LOCK_FILE"' EXIT
+    # The waybar theme module no longer polls every second; it re-runs
+    # --waybar-status on this signal ("signal": 8 in waybar/config).
+    pkill -RTMIN+8 -x waybar 2>/dev/null
 
     # Source the color definitions
     # shellcheck source=/dev/null
@@ -122,6 +125,9 @@ apply_theme() {
     # Live-update all running foot terminals via OSC escape sequences
     reload_foot_colors
     makoctl reload 2>/dev/null
+    # Drop the lock before waybar restarts: the theme module reads its status
+    # once at startup, and must not catch the "switching" state on the way out.
+    rm -f "$LOCK_FILE"
     # Restart waybar to pick up new style.css
     pkill -x waybar 2>/dev/null; sleep 0.3; waybar & disown 2>/dev/null
     # Restart wob to pick up new wob.ini colors

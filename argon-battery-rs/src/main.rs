@@ -188,29 +188,15 @@ fn set_brightness(level: u8) {
     let _ = fs::write(BRIGHTNESS_CACHE, level.to_string());
 }
 
-/// Set CPU governor on all cores via sudo tee.
+/// Set CPU governor on all cores through the root helper install.sh puts in
+/// /usr/local/sbin (it validates the name; see sbin/set-cpu-governor).
 fn set_governor(governor: &str) {
-    for entry in fs::read_dir("/sys/devices/system/cpu/")
-        .into_iter()
-        .flatten()
-        .flatten()
-    {
-        let path = entry.path().join("cpufreq/scaling_governor");
-        if path.exists() {
-            let _ = process::Command::new("sudo")
-                .args(["tee", &path.to_string_lossy()])
-                .stdin(process::Stdio::piped())
-                .stdout(process::Stdio::null())
-                .stderr(process::Stdio::null())
-                .spawn()
-                .and_then(|mut child| {
-                    if let Some(ref mut stdin) = child.stdin {
-                        let _ = stdin.write_all(governor.as_bytes());
-                    }
-                    child.wait()
-                });
-        }
-    }
+    let _ = process::Command::new("sudo")
+        .args(["-n", "/usr/local/sbin/set-cpu-governor", governor])
+        .stdin(process::Stdio::null())
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .status();
 }
 
 /// Check if charging state changed and adjust brightness/governor on transitions.

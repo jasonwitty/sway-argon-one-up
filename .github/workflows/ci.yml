@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'v.*']
+  # Every PR, whatever its base: PRs stacked on a feature branch or aimed at a
+  # release-candidate branch used to merge with no checks at all.
   pull_request:
-    branches: [main]
 
 jobs:
   rust:
@@ -13,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crate: [argon-battery-rs, argon-lid-monitor, trackpad-guard]
+        crate: [argon-battery-rs, argon-lid-monitor, trackpad-guard, power-button-guard]
     defaults:
       run:
         working-directory: ${{ matrix.crate }}
@@ -29,6 +30,9 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --all-targets -- -W clippy::all -W clippy::perf -D warnings
+
+      - name: Tests
+        run: cargo test
 
       - name: Install cargo-audit
         run: cargo install cargo-audit
@@ -108,4 +112,8 @@ jobs:
         run: sudo apt-get install -y shellcheck
 
       - name: Lint scripts
-        run: shellcheck bin/* install.sh
+        run: |
+          shellcheck bin/* sbin/* install.sh \
+            touchpad-native/touchpad-mode greetd/*.sh \
+            trackpad-guard/scripts/*.sh \
+            quickshell-panels/quickshell-build/*.sh installer-test/test.sh

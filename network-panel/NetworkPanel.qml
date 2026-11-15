@@ -388,6 +388,26 @@ Scope {
     }
   }
 
+  // True only while the prompt's text field is actually on screen to take
+  // keys: the prompt is open, its network is still in the scan list, and the
+  // row is not showing "Connecting…" / "Wrong password" in the field's place.
+  // The keyCatcher hands the keyboard to the field for exactly this long.
+  // Keying that off passwordSsid alone left no way to press Esc, Tab or j/k
+  // while a connect was in flight (up to ~30s on a slow or wrong-password
+  // join), or after the prompted network dropped out of the list.
+  readonly property bool passwordFieldLive: passwordSsid !== ""
+    && wifiIndexForSsid(passwordSsid) >= 0
+    && !(actionKind !== "" && actionSsid === passwordSsid)
+    && !(failureReason !== "" && failureSsid === passwordSsid)
+
+  // The field takes focus itself when it reappears; when it goes away with
+  // the prompt still open, give focus back to the keyCatcher.
+  onPasswordFieldLiveChanged: {
+    if (!passwordFieldLive && passwordSsid !== "" && opened) {
+      Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
+    }
+  }
+
   // Keep selectedIndex valid as scans refresh the network list.
   // If the list empties (station gone, e.g. wifi off), bounce the cursor
   // back to the DNS row so the panel doesn't end up with no cursor at all.
@@ -1201,9 +1221,10 @@ Scope {
       anchors.bottomMargin: card.contentBottomInset
       anchors.leftMargin: card.contentLeftInset
       anchors.rightMargin: card.contentRightInset
-      // Freeze the cursor model while the inline password prompt is open;
-      // the TextField inside owns input until Esc/Enter/Cancel.
-      blocked: root.passwordSsid !== ""
+      // Freeze the cursor model while the inline password prompt's field is
+      // on screen; the TextField inside owns input until Esc/Enter/Cancel.
+      // See passwordFieldLive for why this is not just "prompt open".
+      blocked: root.passwordFieldLive
 
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) {

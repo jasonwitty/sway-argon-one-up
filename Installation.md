@@ -112,6 +112,18 @@ You'll see the login screen (gtkgreet) with a wallpaper. Enter your username and
 
 ---
 
+## Upgrading
+
+To upgrade an existing install, run the installer again (same command as Step 5). A re-run:
+
+- rebuilds and reinstalls the Rust daemons and downloads the current system-dashboard, then restarts the services that were running;
+- replaces the configs and scripts with the versions from the repository, after copying your existing ones to `~/.config/sway-argon-backup-<date>-<time>/` — compare against that folder to bring back any edits of your own;
+- keeps the theme you had selected.
+
+Reboot afterwards, as for a first install.
+
+---
+
 ## Next Steps
 
 - Press **Mod+T** to pick a theme

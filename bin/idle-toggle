@@ -17,6 +17,17 @@ SWAYIDLE_CMD=(swayidle -w
     before-sleep 'swaylock -f'
 )
 
+# The waybar idle module re-runs `status` on this signal ("signal": 11 in
+# waybar/config) instead of polling every 5 seconds.
+refresh_waybar() { pkill -RTMIN+11 -x waybar 2>/dev/null || true; }
+
+# Record the Claude activity state for waybar, refreshing it only on a change.
+set_claude_state() {
+    [ "$(cat "$CLAUDE_STATE" 2>/dev/null)" = "$1" ] && return
+    echo "$1" > "$CLAUDE_STATE"
+    refresh_waybar
+}
+
 get_mode() {
     cat "$STATE_FILE" 2>/dev/null || echo "on"
 }
@@ -54,8 +65,10 @@ stop_swayidle() {
 # runs tools, the node process and its children consume CPU. When idle
 # (waiting for user input), CPU time stays flat.
 is_claude_active() {
+    # Claude Code's native build runs as a process named `claude`; the older
+    # npm build runs as `node .../claude`. Match both.
     local pids
-    pids=$(pgrep -f "node.*claude" 2>/dev/null)
+    pids=$( { pgrep -x claude; pgrep -f "node.*claude"; } 2>/dev/null | sort -u)
     [ -z "$pids" ] && return 1
 
     local ticks1=0
@@ -99,14 +112,14 @@ run_watcher() {
 
         if is_claude_active; then
             idle_count=0
-            echo "active" > "$CLAUDE_STATE"
+            set_claude_state active
             if $swayidle_running; then
                 stop_swayidle
                 swayidle_running=false
             fi
         else
             idle_count=$((idle_count + 1))
-            echo "idle" > "$CLAUDE_STATE"
+            set_claude_state idle
             if ! $swayidle_running && [ "$idle_count" -ge 2 ]; then
                 start_swayidle
                 swayidle_running=true
@@ -173,6 +186,7 @@ do_set() {
             notify-send -t 2000 "󰗚 Screen lock: Claude auto mode"
             ;;
     esac
+    refresh_waybar
 }
 
 case "${1:-}" in

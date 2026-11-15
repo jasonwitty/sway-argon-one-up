@@ -8,6 +8,12 @@
 # (or none) is logged in.
 Description=Disable sway touchpad while typing (AMIRA combo keyboard workaround) — system-wide
 After=systemd-modules-load.service
+# Each failed start runs ExecStartPre and ExecStopPost, and both USB-rebind
+# the AMIRA (keyboard included). A start cycle takes longer than the default
+# 10s start-limit window, so without this a persistent failure (no uinput
+# module, say) would flap the keyboard forever. Give up after 5 tries.
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple

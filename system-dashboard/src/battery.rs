@@ -21,6 +21,10 @@ const CURRENT_SCALE_MA_PER_LSB: i32 = 20;
 
 #[derive(Serialize, Clone, Debug, Default)]
 pub struct BatteryState {
+    /// False when the gauge could not be read. The other fields are then
+    /// placeholders and must not be shown as a real reading (a bare default
+    /// would otherwise render as "0%, critical, on battery").
+    pub available: bool,
     pub percent: u8,
     pub charging: bool,
     pub time_remaining_min: Option<u32>,
@@ -28,7 +32,7 @@ pub struct BatteryState {
 }
 
 fn current_ma(high: u8) -> i32 {
-    // Treat the high byte as a signed 8-bit integer; positive = discharging.
+    // Treat the high byte as a signed 8-bit integer; negative = discharging.
     (high as i8 as i32) * CURRENT_SCALE_MA_PER_LSB
 }
 
@@ -38,7 +42,10 @@ pub fn read() -> BatteryState {
         Err(_) => return BatteryState::default(),
     };
 
-    let soc = dev.smbus_read_byte_data(REG_SOC_HIGH).unwrap_or(0).min(100);
+    let soc = match dev.smbus_read_byte_data(REG_SOC_HIGH) {
+        Ok(v) => v.min(100),
+        Err(_) => return BatteryState::default(),
+    };
     let cur_high = dev.smbus_read_byte_data(REG_CURRENT_HIGH).ok();
 
     // CW2217 sign convention on this hardware: bit 7 set = discharging,
@@ -65,6 +72,7 @@ pub fn read() -> BatteryState {
     };
 
     BatteryState {
+        available: true,
         percent: soc,
         charging,
         time_remaining_min,

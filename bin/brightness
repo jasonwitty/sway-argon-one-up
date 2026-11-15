@@ -43,4 +43,10 @@ os.close(fd)
 
 # Cache and show indicator
 echo "$new" > "$CACHE_FILE"
-echo "$new" > "$WOBSOCK"
+# $WOBSOCK is a FIFO; opening it for writing blocks until something reads it.
+# If wob is not running, a plain redirect would hang this script (and the
+# dashboard slider that calls it) forever, so give up after a moment.
+if [ -p "$WOBSOCK" ]; then
+    # shellcheck disable=SC2016  # expanded by the inner bash, from its arguments
+    timeout 1 bash -c 'echo "$1" > "$2"' _ "$new" "$WOBSOCK" 2>/dev/null
+fi

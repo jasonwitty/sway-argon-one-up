@@ -84,6 +84,16 @@ function renderBattery(b) {
   const bar = document.getElementById("battery-bar");
   const icon = document.getElementById("battery-icon");
 
+  if (!b.available) {
+    // Gauge unreadable: say so rather than render the placeholder as 0%.
+    card.classList.remove("warn", "crit", "charging");
+    value.textContent = "?";
+    bar.style.width = "0%";
+    icon.textContent = batteryIcon(0, false, false);
+    sub.textContent = "Battery status unavailable";
+    return;
+  }
+
   const full = b.percent >= 100;
 
   value.textContent = `${b.percent}%`;
@@ -119,7 +129,9 @@ function renderPower(p) {
   document.getElementById("power-value").textContent =
     POWER_LABEL[p.governor] || p.governor;
   document.getElementById("power-sub").textContent =
-    `${p.governor} · ${p.on_ac ? "on AC" : "on battery"}`;
+    p.on_ac == null
+      ? p.governor
+      : `${p.governor} · ${p.on_ac ? "on AC" : "on battery"}`;
   const icon = POWER_GLYPH[p.governor];
   if (icon) document.getElementById("power-icon").textContent = icon;
 }
@@ -222,8 +234,11 @@ function renderFan(f) {
   const value = document.getElementById("fan-value");
   const sub = document.getElementById("fan-sub");
 
-  card.classList.remove("silent", "normal", "turbo", "full", "offline");
-  card.classList.add(f.mode);
+  // Only the built-in modes have a style. A custom mode name must not reach
+  // classList.add(): one containing a space throws and aborts the refresh.
+  const styled = ["silent", "normal", "turbo", "full", "offline"];
+  card.classList.remove(...styled);
+  if (styled.includes(f.mode)) card.classList.add(f.mode);
 
   icon.textContent = FAN_GLYPH[f.mode] || FAN_GLYPH.offline;
 

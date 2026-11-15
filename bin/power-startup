@@ -2,24 +2,30 @@
 # Set brightness and CPU governor based on AC/battery state at startup.
 # Called once from sway config on login.
 
-# Read charging status from battery gauge IC via I2C bus 1, address 0x64
-# Register 0x0E high byte: bit 7 set = discharging, clear = charging
-current_high=$(python3 -c "
-import os, fcntl
-fd = os.open('/dev/i2c-1', os.O_RDWR)
-fcntl.ioctl(fd, 0x0703, 0x64)
-os.write(fd, bytes([0x0E]))
-data = os.read(fd, 1)
-os.close(fd)
-print(data[0])
-" 2>/dev/null)
+# Ask argon-battery-rs for the power state rather than reading the CW2217
+# directly (same reasoning as bin/lid-suspend): when the gauge is asleep or its
+# profile flag is clear every register reads garbage, and a raw read of 0x0E
+# then returns 0xff -- bit 7 set, indistinguishable from "discharging". That
+# pinned the machine to powersave and 40% brightness while on AC. argon-battery-rs
+# knows the gauge's health and reports "unknown" instead.
+battery_class=$(/usr/local/bin/argon-battery-rs 2>/dev/null |
+    grep -o '"class": *"[^"]*"' | cut -d'"' -f4)
 
-if [ -z "$current_high" ]; then
-    exit 0
-fi
+case "$battery_class" in
+    charging)                        on_ac=1 ;;
+    good|moderate|warning|critical)  on_ac=0 ;;
+    *)
+        # Gauge unreadable. Leave brightness alone, run the normal governor,
+        # and still prime the state file as "on AC": argon-battery-rs skips
+        # its AC/battery transition handling until that file exists, and once
+        # the gauge recovers it corrects a wrong guess within a few polls.
+        ~/.local/bin/power-mode ondemand
+        echo "1" > /tmp/.argon-battery-charging
+        exit 0
+        ;;
+esac
 
-# Bit 7: 0 = charging (AC), 1 = discharging (battery)
-if (( (current_high & 0x80) == 0 )); then
+if [ "$on_ac" = 1 ]; then
     brightness=100
     governor="ondemand"
 else
@@ -45,8 +51,4 @@ echo "$brightness" > /tmp/.brightness_level
 ~/.local/bin/power-mode "$governor"
 
 # Prime the state file so argon-battery-rs doesn't re-trigger
-if (( (current_high & 0x80) == 0 )); then
-    echo "1" > /tmp/.argon-battery-charging
-else
-    echo "0" > /tmp/.argon-battery-charging
-fi
+echo "$on_ac" > /tmp/.argon-battery-charging

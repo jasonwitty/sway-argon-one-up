@@ -1,0 +1,8 @@
+# Palette for the Quickshell network panel (network-panel/config).
+# Rendered by switch-theme to ~/.config/quickshell/network-panel/theme/colors.toml;
+# the panel watches that file, so a theme switch recolours it live.
+foreground = "#@@TEXT@@"
+background = "#@@BASE@@"
+accent = "#@@BLUE@@"
+urgent = "#@@RED@@"
+muted = "#@@OVERLAY0@@"

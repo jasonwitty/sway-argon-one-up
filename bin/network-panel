@@ -1,0 +1,50 @@
+#!/bin/bash
+# network-panel — control the Quickshell network panel.
+#
+#   network-panel start    run the panel daemon (exec'd by Sway at login)
+#   network-panel toggle   open/close the panel (waybar click, $mod+Ctrl+n)
+#   network-panel open|close|toggleWifi|showQr
+#
+# Any command other than `start` is forwarded over Quickshell IPC, starting
+# the daemon first if it is not running.
+
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/network-panel"
+export PATH="$HOME/.local/bin:$PATH"
+
+running() {
+    quickshell ipc -p "$CONFIG" show >/dev/null 2>&1
+}
+
+start() {
+    # exec_always re-runs this on every Sway reload; one instance is enough.
+    running && return 0
+    setsid -f quickshell -p "$CONFIG" >/dev/null 2>&1
+}
+
+case "${1:-toggle}" in
+    start)
+        start
+        ;;
+    stop)
+        quickshell kill -p "$CONFIG" >/dev/null 2>&1
+        ;;
+    restart)
+        quickshell kill -p "$CONFIG" >/dev/null 2>&1
+        start
+        ;;
+    open|close|toggle|toggleWifi|showQr|openCaptivePortal)
+        if ! running; then
+            start
+            # Wait for the IPC socket rather than a fixed sleep.
+            for _ in $(seq 1 50); do
+                running && break
+                sleep 0.1
+            done
+        fi
+        quickshell ipc -p "$CONFIG" call network "$1" >/dev/null 2>&1
+        ;;
+    *)
+        echo "Usage: network-panel [start|stop|restart|toggle|open|close|toggleWifi|showQr]" >&2
+        exit 2
+        ;;
+esac

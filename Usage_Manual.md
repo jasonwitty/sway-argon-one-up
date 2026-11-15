@@ -75,6 +75,7 @@ A reference guide for using the Sway desktop on Argon ONE UP. Covers keyboard sh
 |----------|--------|
 | **Mod+B** | Launch Brave browser |
 | **Mod+N** | Open file manager (Thunar) |
+| **Mod+Ctrl+N** | Open the network panel (Wi-Fi, connection details, DNS). Navigate with arrows or h/j/k/l, Enter to act, Esc to close |
 | **Mod+C** | Open Claude Code |
 | **Mod+Shift+C** | Quick Claude prompt (wofi popup) |
 | **Mod+T** | Theme picker |

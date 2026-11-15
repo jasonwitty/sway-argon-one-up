@@ -1,0 +1,13 @@
+module qs.Ui
+
+BorderOverlay 1.0 BorderOverlay.qml
+BorderSurface 1.0 BorderSurface.qml
+Button 1.0 Button.qml
+CursorSurface 1.0 CursorSurface.qml
+PanelActionButton 1.0 PanelActionButton.qml
+PanelKeyCatcher 1.0 PanelKeyCatcher.qml
+PanelSectionHeader 1.0 PanelSectionHeader.qml
+PanelSeparator 1.0 PanelSeparator.qml
+PanelToolTip 1.0 PanelToolTip.qml
+TextField 1.0 TextField.qml
+ToggleSwitch 1.0 ToggleSwitch.qml

@@ -56,7 +56,8 @@
     "format-ethernet": "󰈀 {ipaddr}",
     "format-disconnected": "󰤭 offline",
     "tooltip": true,
-    "on-click": "foot -e nmtui"
+    "on-click": "~/.local/bin/network-panel toggle",
+    "on-click-right": "foot -e nmtui"
   },
   "clock": {
     "format": "{:%a %b %d  %H:%M}",

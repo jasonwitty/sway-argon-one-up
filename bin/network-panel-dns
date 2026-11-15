@@ -1,0 +1,141 @@
+#!/bin/bash
+# network-panel-dns — show or set the DNS provider for this machine's
+# Wi-Fi and Ethernet connections.
+#
+#   network-panel-dns                              print the current provider
+#   network-panel-dns DHCP|Cloudflare|Google|Custom
+#
+# Modelled on Omarchy's omarchy-dns, but without root: Omarchy writes a global
+# NetworkManager drop-in and systemd-resolved config, which needs a sudoers
+# rule and a resolver this distro does not run. Here the servers are set on
+# each saved connection profile through nmcli, which the logged-in user is
+# already allowed to do. The one difference that shows: a network joined
+# *after* a provider is picked starts on DHCP until the provider is picked
+# again.
+
+set -euo pipefail
+
+CLOUDFLARE4="1.1.1.1 1.0.0.1"
+CLOUDFLARE6="2606:4700:4700::1111 2606:4700:4700::1001"
+GOOGLE4="8.8.8.8 8.8.4.4"
+GOOGLE6="2001:4860:4860::8888 2001:4860:4860::8844"
+
+# LC_ALL=C because nmcli translates state words; -e no so values are not
+# backslash-escaped.
+nm_get() {
+  LC_ALL=C nmcli -e no -g "$@" 2>/dev/null
+}
+
+profiles() {
+  nm_get UUID,TYPE connection show |
+    awk -F: '$2 == "802-11-wireless" || $2 == "802-3-ethernet" { print $1 }'
+}
+
+# The profile behind the default route, falling back to any active one.
+active_profile() {
+  local device uuid
+  device=$(ip route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit } }')
+  if [[ -n $device ]]; then
+    uuid=$(nm_get GENERAL.CON-UUID device show "$device" | head -n 1)
+    [[ -n $uuid && $uuid != "--" ]] && { echo "$uuid"; return; }
+  fi
+  nm_get UUID,TYPE connection show --active |
+    awk -F: '$2 == "802-11-wireless" || $2 == "802-3-ethernet" { print $1; exit }'
+}
+
+current_provider() {
+  local uuid dns ignore
+  uuid=$(active_profile)
+  [[ -n $uuid ]] || { echo "DHCP"; return; }
+
+  ignore=$(nm_get ipv4.ignore-auto-dns connection show "$uuid")
+  dns=$(nm_get ipv4.dns connection show "$uuid")
+
+  if [[ $ignore != "yes" || -z ${dns//[[:space:],]/} ]]; then
+    echo "DHCP"
+  elif [[ $dns == *"1.1.1.1"* ]]; then
+    echo "Cloudflare"
+  elif [[ $dns == *"8.8.8.8"* ]]; then
+    echo "Google"
+  else
+    echo "Custom"
+  fi
+}
+
+set_dns() {
+  local ipv4=$1 ipv6=$2 ignore uuid
+  [[ -n $ipv4$ipv6 ]] && ignore=yes || ignore=no
+
+  while read -r uuid; do
+    [[ -n $uuid ]] || continue
+    nmcli connection modify "$uuid" \
+      ipv4.ignore-auto-dns "$ignore" ipv4.dns "$ipv4" \
+      ipv6.ignore-auto-dns "$ignore" ipv6.dns "$ipv6" >/dev/null
+  done < <(profiles)
+
+  # Push the new servers into the live links without dropping them.
+  local device type state
+  while IFS=: read -r device type state; do
+    [[ $state == connected* ]] || continue
+    case "$type" in
+      wifi | ethernet) nmcli device reapply "$device" >/dev/null 2>&1 || true ;;
+    esac
+  done < <(nm_get DEVICE,TYPE,STATE device status)
+}
+
+# Sorts a free-form server list into $ipv4 and $ipv6, rejecting anything that
+# is not an address so a typo cannot be saved as a DNS server.
+split_servers() {
+  local server
+  ipv4="" ipv6=""
+  for server in ${1//,/ }; do
+    if [[ $server =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+      ipv4+="${ipv4:+ }$server"
+    elif [[ $server == *:* && $server =~ ^[0-9A-Fa-f:.]+$ ]]; then
+      ipv6+="${ipv6:+ }$server"
+    else
+      echo "Error: '$server' is not an IP address." >&2
+      return 1
+    fi
+  done
+}
+
+usage() {
+  echo "Usage: network-panel-dns [DHCP|Cloudflare|Google|Custom]" >&2
+}
+
+if (($# == 0)); then
+  current_provider
+  exit 0
+fi
+if (($# > 1)); then
+  usage
+  exit 1
+fi
+
+case "${1,,}" in
+  dhcp)
+    set_dns "" ""
+    ;;
+  cloudflare)
+    set_dns "$CLOUDFLARE4" "$CLOUDFLARE6"
+    ;;
+  google)
+    set_dns "$GOOGLE4" "$GOOGLE6"
+    ;;
+  custom)
+    echo "Enter your DNS servers (space-separated, e.g. '192.168.1.1 9.9.9.9'):"
+    read -r servers || servers=""
+    if ! split_servers "$servers" || [[ -z $ipv4$ipv6 ]]; then
+      echo "No DNS servers set." >&2
+      # Launched in its own terminal from the panel; leave the message up.
+      [[ -t 0 ]] && read -r -n 1 -s -p "Press any key to close." || true
+      exit 1
+    fi
+    set_dns "$ipv4" "$ipv6"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

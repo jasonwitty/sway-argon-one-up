@@ -411,6 +411,22 @@ cp mimeapps.list ~/.config/
 # Wallpapers
 cp -r wallpapers ~/.wallpapers
 
+# The Sakurazuki wallpaper has no licence in its upstream repo, so it is not
+# bundled here; fetch it from its author (pinned commit) instead. Without it the
+# theme still applies and simply keeps the previous wallpaper.
+if [ ! -f "$HOME/.wallpapers/sakurazuki.png" ]; then
+    if curl -fsSL -o "$HOME/.wallpapers/sakurazuki.png" \
+        "https://raw.githubusercontent.com/ahmed-z0/omarchy-sakurazuki-theme/488946b79e6ba9a0f93c84c8c9bfacd0add6f395/backgrounds/sakura.png"; then
+        # It is 5744x2944 and 18 MB; shrink it when a converter is around.
+        if command -v magick >/dev/null; then
+            magick "$HOME/.wallpapers/sakurazuki.png" -resize 2560x "$HOME/.wallpapers/sakurazuki.png" || true
+        fi
+    else
+        rm -f "$HOME/.wallpapers/sakurazuki.png"
+        warn "Could not download the Sakurazuki wallpaper; the theme will keep the previous wallpaper"
+    fi
+fi
+
 # Scripts
 mkdir -p ~/.local/bin
 cp bin/* ~/.local/bin/

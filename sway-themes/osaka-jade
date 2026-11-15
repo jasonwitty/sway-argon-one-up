@@ -1,0 +1,41 @@
+# Osaka Jade — the dark jade theme that shipped with Omarchy
+# Palette from https://github.com/omacom/omarchy-osaka-jade-theme (MIT)
+THEME_NAME="Osaka Jade"
+FLAVOR="osaka-jade"
+COLOR_SCHEME="prefer-dark"
+GTK_THEME="Gruvbox-Dark"
+ICON_THEME="Papirus-Dark"
+FOLDER_COLOR="green"
+WALLPAPER="$HOME/.wallpapers/osaka-jade.jpg"
+
+# Accents — sage green leads (Omarchy's accent), with its bright variants
+ROSEWATER="f7e8b2"
+FLAMINGO="db9f9c"
+PINK="d2689c"
+MAUVE="75bbb3"
+RED="ff5345"
+MAROON="db9f9c"
+PEACH="e5c736"
+YELLOW="e5c736"
+GREEN="63b07a"
+TEAL="2dd5b7"
+SKY="8cd3cb"
+SAPPHIRE="81b8a8"
+BLUE="509475"
+LAVENDER="acd4cf"
+
+# Warm parchment text scale
+TEXT="c1c497"
+SUBTEXT1="a9ae87"
+SUBTEXT0="919877"
+OVERLAY2="7a8469"
+OVERLAY1="66765f"
+OVERLAY0="53685b"
+
+# Deep green-black backgrounds
+SURFACE2="32473b"
+SURFACE1="23372b"
+SURFACE0="1a2921"
+BASE="111c18"
+MANTLE="0c1512"
+CRUST="090f0d"

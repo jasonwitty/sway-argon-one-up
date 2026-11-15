@@ -80,13 +80,8 @@
   },
   "clock": {
     "format": "{:%a %b %d  %H:%M}",
-    "tooltip-format": "<tt>{calendar}</tt>",
-    "calendar": {
-      "mode": "month",
-      "format": {
-        "today": "<b><span background=\"#8caaee\" color=\"#303446\">{}</span></b>"
-      }
-    }
+    "tooltip": false,
+    "on-click": "~/.local/bin/clock-panel toggle"
   },
   "backlight": {
     "format": "󰃠 {percent}%",

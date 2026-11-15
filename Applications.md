@@ -28,7 +28,7 @@ Every package below is installed by the Sway Argon ONE UP installer (`install.sh
 | pipewire | Multimedia server for audio and video. Handles all audio playback and recording. | Required |
 | wireplumber | Session and policy manager for PipeWire. Manages audio routing and device selection. | Required |
 | network-manager | Network connection manager. Handles Wi-Fi and wired network connections. | Required |
-| quickshell | QML shell toolkit that runs the network and Bluetooth panels. Not packaged for trixie, so the installer uses a prebuilt release or builds it from source (`quickshell-panels/quickshell-build/`). | Required |
+| quickshell | QML shell toolkit that runs the network, Bluetooth and calendar panels. Not packaged for trixie, so the installer uses a prebuilt release or builds it from source (`quickshell-panels/quickshell-build/`). | Required |
 | network panel | Port of the Omarchy network manager (`network-panel/`): Wi-Fi list and connect, connection details, band pinning, DNS provider, Wi-Fi QR share. Opens from the waybar network icon or **Mod+Ctrl+N**. | Required |
 | iw, qrencode | Used by the network panel for link details and the Wi-Fi share QR code. | Required |
 | ukui-polkit | Polkit authentication agent. Handles privilege-escalation prompts for GUI apps. | Required |
@@ -92,6 +92,7 @@ Every package below is installed by the Sway Argon ONE UP installer (`install.sh
 | zathura | Minimalist document viewer. The default PDF viewer. | Required |
 | bluetooth panel | Port of the Omarchy Bluetooth panel (`bluetooth-panel/`): power switch, paired and nearby devices, pair / connect / disconnect / forget, battery level. Opens from the waybar Bluetooth icon or **Mod+Ctrl+B**; right-click the icon to turn Bluetooth on or off. | Required |
 | bluez-tools | Provides `bt-agent`, the pairing agent the Bluetooth panel relies on. | Required |
+| calendar panel | Port of the Omarchy clock's calendar popup (`clock-panel/`): month grid with week numbers and year progress. Opens from the waybar clock or **Mod+Ctrl+C**. | Required |
 
 ## Theming
 

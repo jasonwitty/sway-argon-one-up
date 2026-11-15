@@ -1,10 +1,10 @@
 #!/bin/bash
-# panels — run the Quickshell process that hosts the network and Bluetooth panels.
+# panels — run the Quickshell process that hosts the network, Bluetooth and calendar panels.
 #
 #   panels start|stop|restart        manage the daemon (Sway execs `panels start`)
 #   panels call <target> <function>  call a panel over IPC, starting the daemon
-#                                    first if needed (used by network-panel and
-#                                    bluetooth-panel)
+#                                    first if needed (used by network-panel,
+#                                    bluetooth-panel and clock-panel)
 
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/panels"
 export PATH="$HOME/.local/bin:$PATH"

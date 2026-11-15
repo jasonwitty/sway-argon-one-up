@@ -144,7 +144,6 @@
     "tooltip": false,
     "on-click": "~/.local/bin/power-prompt"
   },
-  },
   "custom/clock": {
     "exec": "~/.local/bin/clock-label",
     "tooltip": false,

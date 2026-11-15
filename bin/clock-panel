@@ -1,0 +1,18 @@
+#!/bin/bash
+# clock-panel — control the Quickshell calendar panel.
+#
+#   clock-panel toggle            open/close the calendar (waybar clock click, $mod+Ctrl+c)
+#   clock-panel open|close
+#   clock-panel toggleWeekStart   switch weeks between starting on Sunday and Monday
+#
+# The panel runs inside the shared panels daemon; see `panels`.
+
+case "${1:-toggle}" in
+    open|close|toggle|toggleWeekStart)
+        exec "$HOME/.local/bin/panels" call clock "${1:-toggle}"
+        ;;
+    *)
+        echo "Usage: clock-panel [toggle|open|close|toggleWeekStart]" >&2
+        exit 2
+        ;;
+esac

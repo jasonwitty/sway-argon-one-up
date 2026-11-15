@@ -123,7 +123,8 @@ window#waybar {
   color: #@@RED@@;
 }
 
-#clock {
+#clock,
+#custom-clock {
   color: #@@ROSEWATER@@;
 }
 
